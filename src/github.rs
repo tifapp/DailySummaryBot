@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, sync::Arc};
 use serde::{Serialize, Deserialize};
 use anyhow::Result;
 use reqwest::{Client, Error};
@@ -74,7 +74,7 @@ fn check_overall_status(check_runs: &GithubCheckRuns) -> (String, Vec<CheckRunDe
     (state, failing_check_runs, action_required_check_runs)
 }
 
-pub async fn fetch_pr_details(client: &Client, pr_url: &str) -> Result<PullRequest, Error> {
+pub async fn fetch_pr_details(client: Arc<Client>, pr_url: &str) -> Result<PullRequest, Error> {
     let github_token = env::var("GITHUB_TOKEN").expect("GITHUB_TOKEN environment variable should exist");
 
     info!("Going to get status checks from Github PR: {:?}", pr_url);

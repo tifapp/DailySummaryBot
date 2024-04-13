@@ -27,7 +27,7 @@ use serde_json::json;
 //sprint complete/sprint incomplete at the end. which tells us if we met our goals or not. + %completed.
 
 async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
-    info!("Handling request: Method: {:?}, Query: {:?}", event.method(), event);
+    info!("Handling request: Method: {:?}, Event: {:?}", event.method(), event);
     // let who = event
     //     .query_string_parameters_ref()
     //     .and_then(|params| params.first("name"))
@@ -36,7 +36,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     let board = fetch_sprint_summary_data("KDRh6yBu").await.expect(&format!("Trello board {} should be accessible", "KDRh6yBu"));
     info!("Daily Summary data: {:?}", board);
 
-    let blocks = format_summary_message("C06RRR7NBAB", board).await;
+    let blocks = format_summary_message(board).await;
     let message = json!({
         "channel": "C06RRR7NBAB",
         "blocks": blocks

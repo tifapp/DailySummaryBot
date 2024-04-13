@@ -29,13 +29,13 @@ struct GithubCheckRuns {
     check_runs: Vec<GithubCheckRun>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CheckRunDetails {
     pub name: String,
     pub details_url: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PullRequest {
     pub pr_url: String,
     pub state: String,

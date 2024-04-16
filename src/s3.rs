@@ -50,7 +50,20 @@ async fn put_s3_json(client: &Client, key: &str, ticket_data: &Value) -> Result<
 
     match resp {
         Ok(_) => Ok(()),
-        Err(e) => Err(anyhow!(e)),
+        Err(e) => Err(anyhow!("Failed to insert json: {}", e)),
+    }
+}
+
+async fn delete_s3_json(client: &Client, key: &str) -> Result<()> {
+    let resp = client.delete_object()
+        .bucket("agilesummary")
+        .key(key)
+        .send()
+        .await;
+
+    match resp {
+        Ok(_) => Ok(()),
+        Err(e) => Err(anyhow!("Failed to delete json: {}", e)),
     }
 }
 
@@ -86,6 +99,10 @@ pub async fn put_sprint_data(client: &Client, sprint_data: &SprintRecord) -> Res
         .context("Failed to convert ticket data to JSON value")?;
 
     put_s3_json(client, "sprint_data.json", &sprint_data_value).await
+}
+
+pub async fn clear_sprint_data(client: &Client) -> Result<()> {
+    delete_s3_json(client, "sprint_data.json").await
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -176,6 +193,10 @@ pub async fn put_ticket_data(client: &Client, ticket_data: &TicketRecords) -> Re
         .context("Failed to convert ticket data to JSON value")?;
 
     put_s3_json(client, "ticket_data.json", &ticket_data_value).await
+}
+
+pub async fn clear_ticket_data(client: &Client) -> Result<()> {
+    delete_s3_json(client, "ticket_data.json").await
 }
 
 pub async fn get_sprint_members(client: &Client) -> Result<Option<HashMap<String, String>>> {

@@ -182,6 +182,7 @@ pub fn create_ticket_blocks(tickets: &[Ticket]) -> serde_json::Value {
                 ticket_name = format!("🐌 {}", ticket_name);
             }
         }
+        
         let mut ticket_elements = vec![link_element(&ticket.details.url, &ticket_name, Some(json!({"bold": true, "strike": ticket.details.is_backlogged})))];
         
         let needs_attention = ticket.details.list_name != "Investigation/Discussion" && (!ticket.details.has_description || !ticket.details.has_labels);        
@@ -189,10 +190,10 @@ pub fn create_ticket_blocks(tickets: &[Ticket]) -> serde_json::Value {
             ticket_elements.push(text_element("\n", None));
             ticket_elements.push(text_element("⚠️", None));
             if !ticket.details.has_description {
-                ticket_elements.push(text_element(" | Missing Description", None));
+                ticket_elements.push(text_element(" | Missing Description", Some(json!({"bold": true}))));
             }
             if !ticket.details.has_labels {
-                ticket_elements.push(text_element(" | Missing Labels", None));
+                ticket_elements.push(text_element(" | Missing Labels", Some(json!({"bold": true}))));
             }
         }
         

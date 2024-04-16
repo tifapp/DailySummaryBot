@@ -34,18 +34,19 @@ pub async fn create_sprint_message(command: &str, channel_id: &str, text: &str) 
 
     let active_sprint_record = get_sprint_data(&s3_client).await?;
     let tickets = fetch_ticket_summary_data().await?;
-    
+
     match command {
         //add extra branch for pushing the button
         //this branch should also start the eventbridge rule
         //this branch should save sprint data to s3
+        //add historical data viewing & pushing
         "/sprint-kickoff" => {
             if active_sprint_record.is_some() {
                 Err(anyhow!("A sprint is already in progress"))
             } else {
                 let new_sprint_input = parse_sprint_input(&text)?;
-                let mut message_blocks = vec![header_block(&format!("🔭 {}: Sprint Preview - {}", new_sprint_input.name, print_current_date()))];
-                message_blocks.push(section_block(&format!("*{} Tickets*\n*{:?} Days*", tickets.num_of_tickets, days_between(Some(&print_current_date()), &new_sprint_input.end_date))));
+                let mut message_blocks = vec![header_block(&format!("🔭 Sprint {} Preview: {} - {}", new_sprint_input.name, print_current_date(), new_sprint_input.end_date))];
+                message_blocks.push(section_block(&format!("*{} Tickets*\n*{:?} Days*", tickets.num_of_tickets, days_between(Some(&print_current_date()), &new_sprint_input.end_date)?)));
                 message_blocks.extend(create_ticket_summary(&tickets).await);
                 message_blocks.push(button_block("Proceed", "kickoff-sprint", text));
                 send_message_to_slack(&channel_id, &message_blocks).await.context("Failed to send message to Slack")
@@ -59,9 +60,9 @@ pub async fn create_sprint_message(command: &str, channel_id: &str, text: &str) 
                 Err(anyhow!("No active sprint"))
             } else {
                 let sprint_input = SprintInput::from(&active_sprint_record.expect("should have an active sprint saved"));
-                let mut message_blocks = vec![header_block(&format!("🔍 {}: Sprint Check-In - {}", sprint_input.name, print_current_date()))];
+                let mut message_blocks = vec![header_block(&format!("🔍 Sprint {} Check-In: {}", sprint_input.name, print_current_date()))];
 
-                let days_until_end = days_between(Some(&print_current_date()), &sprint_input.end_date).expect(&format!("Given date {} should be parseable", sprint_input.end_date));
+                let days_until_end = days_between(Some(&print_current_date()), &sprint_input.end_date)?;
                 let completed_ratio = tickets.count_open_tickets() as f64 / tickets.num_of_tickets as f64;
                 let completed_percentage = completed_ratio * 100.0;
 
@@ -77,6 +78,7 @@ pub async fn create_sprint_message(command: &str, channel_id: &str, text: &str) 
             }
         },
         //add extra branch for sprint ending
+        //remember to clear the sprint data json after every sprint
         //add historical data viewing & pushing
         _ => Err(anyhow!("Unsupported command '{}'", command))
     }

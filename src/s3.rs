@@ -5,7 +5,7 @@ use serde_json::{Value, from_value};
 use anyhow::{Result, Context, anyhow};
 use std::collections::HashMap;
 
-use crate::{summary::Ticket, trello::TicketDetails};
+use crate::{sprint_summary::SprintInput, ticket_summary::Ticket, trello::TicketDetails};
 
 async fn get_s3_json(client: &Client, key: &str) -> Result<Option<Value>> {
     let object = match client.get_object()
@@ -59,8 +59,17 @@ pub struct SprintRecord {
     pub name: String,
     pub start_date: String,
     pub end_date: String,
-    pub channel: String,
+    pub channel_id: String,
     pub trello_board: String,
+}
+
+impl From<&SprintRecord> for SprintInput {
+    fn from(record: &SprintRecord) -> Self {
+        SprintInput {
+            end_date: record.end_date.clone(),
+            name: record.name.clone(),
+        }
+    }
 }
 
 pub async fn get_sprint_data(client: &Client) -> Result<Option<SprintRecord>> {

@@ -75,7 +75,7 @@ fn check_overall_status(check_runs: &GithubCheckRuns) -> (String, Vec<CheckRunDe
 }
 
 pub async fn fetch_pr_details(client: Arc<Client>, pr_url: &str) -> Result<PullRequest, Error> {
-    let github_token = env::var("GITHUB_TOKEN").expect("GITHUB_TOKEN environment variable should exist");
+    let github_token = env::var("USER_GITHUB_TOKEN").expect("USER_GITHUB_TOKEN environment variable should exist");
 
     info!("Going to get status checks from Github PR: {:?}", pr_url);
 

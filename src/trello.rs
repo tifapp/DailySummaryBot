@@ -56,7 +56,8 @@ pub struct TicketDetails {
     pub pr_url: Option<String>,
 }
 
-async fn fetch_trello_lists(client: &Client, trello_board_id: &str) -> Result<Vec<TrelloList>, Error> {
+async fn fetch_trello_lists(client: &Client) -> Result<Vec<TrelloList>, Error> {
+    let trello_board_id = env::var("TRELLO_BOARD_ID").expect("TRELLO_BOARD_ID environment variable should exist");
     let trello_api_key = env::var("TRELLO_API_KEY").expect("TRELLO_API_KEY environment variable should exist");
     let trello_api_token = env::var("TRELLO_API_TOKEN").expect("TRELLO_API_TOKEN environment variable should exist");
 
@@ -74,7 +75,8 @@ async fn fetch_trello_lists(client: &Client, trello_board_id: &str) -> Result<Ve
     Ok(serde_json::from_str(&body).expect("Failed to parse Trello lists"))
 }
 
-async fn fetch_trello_cards(client: &Client, trello_board_id: &str) -> Result<Vec<TrelloCard>, Error> {
+async fn fetch_trello_cards(client: &Client) -> Result<Vec<TrelloCard>, Error> {
+    let trello_board_id = env::var("TRELLO_BOARD_ID").expect("TRELLO_BOARD_ID environment variable should exist");
     let trello_api_key = env::var("TRELLO_API_KEY").expect("TRELLO_API_KEY environment variable should exist");
     let trello_api_token = env::var("TRELLO_API_TOKEN").expect("TRELLO_API_TOKEN environment variable should exist");
 
@@ -92,10 +94,10 @@ async fn fetch_trello_cards(client: &Client, trello_board_id: &str) -> Result<Ve
     Ok(serde_json::from_str(&body).expect("Failed to parse Trello cards"))
 }
 
-pub async fn fetch_ticket_details(client: Arc<Client>, trello_board_id: &str) -> Result<Vec<TicketDetails>, Error> {
-    let lists = fetch_trello_lists(&client, trello_board_id).await?;
+pub async fn fetch_ticket_details(client: Arc<Client>) -> Result<Vec<TicketDetails>, Error> {
+    let lists = fetch_trello_lists(&client).await?;
     let list_name_map = Arc::new(lists.into_iter().map(|list| (list.id, list.name)).collect::<HashMap<_, _>>());
-    let cards = fetch_trello_cards(&client, trello_board_id).await?;
+    let cards = fetch_trello_cards(&client).await?;
     
     Ok(cards.into_iter().map(|card| {
         let list_name_map_clone = Arc::clone(&list_name_map);

@@ -59,6 +59,8 @@ async fn function_handler(event: Request) -> Result<Response<Body>, lambda_http:
     }
 
     let params: SlackRequestBody = parse_request_body(event.body())?;
+    
+    info!("Parsed params are: {:?}", params);
 
     match create_sprint_message(&params.command, &params.channel_id, &params.text).await {
         Ok(()) => {

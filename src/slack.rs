@@ -1,6 +1,5 @@
 use std::env;
 use serde::{Deserialize, Serialize};
-use reqwest::Client;
 use serde_json::json;
 use crate::tracing::info;
 use hmac::{Hmac, Mac};
@@ -50,7 +49,7 @@ pub fn verify_slack_request(req: &Request) -> Result<()> {
 }
 
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct SlackRequestBody {
     pub token: String, //JxPzi5d87tmKzBvRUAyE9bIX,
     pub channel_id: String, // C06RRR7NBAB,
@@ -66,7 +65,6 @@ struct SlackResponse {
     error: Option<String>,
 }
 
-//may need a success and failure unit test here
 pub async fn send_message_to_slack<T: Serialize>(channel_id: &str, blocks: &T) -> Result<()> {
     let slack_token = env::var("SLACK_OAUTH").expect("SLACK_OAUTH environment variable should exist");
 

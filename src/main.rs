@@ -7,13 +7,12 @@ mod github;
 mod slack;
 mod s3;
 
-use aws_config::meta::region::RegionProviderChain;
 use lambda_http::{run, service_fn, tracing::{self, error}, Body, Request, Response};
 use anyhow::{Result, anyhow, Context};
 use reqwest::StatusCode;
-use crate::{s3::get_sprint_data, slack::{verify_slack_request, SlackRequestBody}, sprint_summary::{create_sprint_message, generate_summary_message}, ticket_summary::{create_ticket_summary, fetch_ticket_summary_data}};
+use crate::slack::{verify_slack_request, SlackRequestBody};
+use crate::sprint_summary::{create_sprint_message};
 use tracing::info;
-use crate::slack::send_message_to_slack;
 use serde::de::DeserializeOwned;
 
 //handle triggers
@@ -61,10 +60,8 @@ async fn function_handler(event: Request) -> Result<Response<Body>, lambda_http:
 
     let params: SlackRequestBody = parse_request_body(event.body())?;
 
-    let message = create_sprint_message(&params.command, &params.channel_id, &params.text).await;
-
-    match message {
-        Ok(msg) => {
+    match create_sprint_message(&params.command, &params.channel_id, &params.text).await {
+        Ok(()) => {
             let resp = Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "text/html")

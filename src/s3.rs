@@ -5,7 +5,7 @@ use serde_json::{Value, from_value};
 use anyhow::{Result, Context, anyhow};
 use std::collections::HashMap;
 
-use crate::{sprint_summary::SprintInput, ticket_summary::Ticket, trello::TicketDetails};
+use crate::{sprint_summary::SprintInput, ticket_summary::{Ticket, TicketSummary}, trello::TicketDetails};
 
 async fn get_s3_json(client: &Client, key: &str) -> Result<Option<Value>> {
     let object = match client.get_object()
@@ -141,6 +141,25 @@ impl From<&TicketRecord> for Ticket {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TicketRecords {
     pub tickets: Vec<TicketRecord>
+}
+
+impl From<TicketSummary> for TicketRecords {
+    fn from(summary: TicketSummary) -> Self {
+        let mut tickets = Vec::new();
+
+        let mut extend_tickets = |vec: Vec<Ticket>| {
+            tickets.extend(vec.iter().map(TicketRecord::from));
+        };
+
+        extend_tickets(summary.blocked_prs);
+        extend_tickets(summary.open_prs);
+        extend_tickets(summary.open_tickets);
+        extend_tickets(summary.completed_tickets);
+        extend_tickets(summary.goal_tickets);
+        extend_tickets(summary.backlogged_tickets);
+
+        TicketRecords { tickets }
+    }
 }
 
 pub async fn get_ticket_data(client: &Client) -> Result<Option<TicketRecords>> {

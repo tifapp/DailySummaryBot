@@ -5,8 +5,7 @@ use crate::slack::send_message_to_slack;
 use crate::ticket_summary::{create_ticket_summary, fetch_ticket_summary_data};
 use crate::date::{days_between, print_current_date};
 use crate::components::{button_block, header_block, section_block};
-use serde_json::Value;
-use crate::s3::get_sprint_data;
+use crate::s3::{get_sprint_data, put_ticket_data};
 
 pub struct SprintInput {
     pub end_date: String,
@@ -28,31 +27,14 @@ fn parse_sprint_input(text: &str) -> Result<SprintInput> {
     Ok(SprintInput {end_date: end_date.to_string(), name})
 }
 
-pub async fn generate_summary_message(sprint_input: SprintInput, persist_data: bool) -> Result<Vec<Value>> {
-    let tickets = fetch_ticket_summary_data(persist_data).await?;
-
-    let daysUntilEnd = days_between(Some(&print_current_date()), &sprint_input.end_date).expect(&format!("Given date {} should be parseable", sprint_input.end_date));
-    let completed_ratio = tickets.count_open_tickets() as f64 / tickets.num_of_tickets as f64;
-
-    let mut message_blocks = vec![
-        section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint.", tickets.count_open_tickets(), tickets.num_of_tickets, daysUntilEnd)),
-        section_block(&format!("\n*{:.2}% of tasks completed.*", completed_ratio)),
-        //add bad, neutral, happy emojis next to percentage
-        //add clock if days remaining is too low
-        //add some indicator if it looks like we can't finish? could do it in a follow up, we'll see how people use the tool first
-    ];
-
-    message_blocks.extend(create_ticket_summary(tickets).await);
-
-    Ok(message_blocks)
-}
-
 pub async fn create_sprint_message(command: &str, channel_id: &str, text: &str) -> Result<()> {  
     let region_provider = RegionProviderChain::default_provider().or_else("us-west-2");
     let config = aws_config::from_env().region(region_provider).load().await;
     let s3_client = aws_sdk_s3::Client::new(&config);
 
     let active_sprint_record = get_sprint_data(&s3_client).await?;
+    let tickets = fetch_ticket_summary_data().await?;
+    
     match command {
         //add extra branch for pushing the button
         //this branch should also start the eventbridge rule
@@ -63,7 +45,8 @@ pub async fn create_sprint_message(command: &str, channel_id: &str, text: &str) 
             } else {
                 let new_sprint_input = parse_sprint_input(&text)?;
                 let mut message_blocks = vec![header_block(&format!("🔭 {}: Sprint Preview - {}", new_sprint_input.name, print_current_date()))];
-                message_blocks.extend(generate_summary_message(new_sprint_input, false).await?);
+                message_blocks.push(section_block(&format!("*{} Tickets*\n*{:?} Days*", tickets.num_of_tickets, days_between(Some(&print_current_date()), &new_sprint_input.end_date))));
+                message_blocks.extend(create_ticket_summary(&tickets).await);
                 message_blocks.push(button_block("Proceed", "kickoff-sprint", text));
                 send_message_to_slack(&channel_id, &message_blocks).await.context("Failed to send message to Slack")
             }
@@ -77,7 +60,19 @@ pub async fn create_sprint_message(command: &str, channel_id: &str, text: &str) 
             } else {
                 let sprint_input = SprintInput::from(&active_sprint_record.expect("should have an active sprint saved"));
                 let mut message_blocks = vec![header_block(&format!("🔍 {}: Sprint Check-In - {}", sprint_input.name, print_current_date()))];
-                message_blocks.extend(generate_summary_message(sprint_input, true).await?);
+
+                let days_until_end = days_between(Some(&print_current_date()), &sprint_input.end_date).expect(&format!("Given date {} should be parseable", sprint_input.end_date));
+                let completed_ratio = tickets.count_open_tickets() as f64 / tickets.num_of_tickets as f64;
+                let completed_percentage = completed_ratio * 100.0;
+
+                let time_warning = if days_until_end <= 4 { "⏰" } else { "" };
+
+                message_blocks.push(section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint. {}", tickets.count_open_tickets(), tickets.num_of_tickets, days_until_end, time_warning)));
+                message_blocks.push(section_block(&format!("\n*{:.2}% of tasks completed.*", completed_percentage)));
+                message_blocks.extend(create_ticket_summary(&tickets).await);
+
+                put_ticket_data(&s3_client, &tickets.into()).await?;
+                
                 send_message_to_slack(&channel_id, &message_blocks).await.context("Failed to send message to Slack")
             }
         },

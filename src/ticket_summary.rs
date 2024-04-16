@@ -54,7 +54,7 @@ impl TicketSummary {
 
 //maybe for a high priority item, we need to have all hands on it
 //should help chetan allocate resources, figure out who should be working on what, and whether rescoping is necessary and/or whether our goals are clear, feasible and attainable
-pub async fn fetch_ticket_summary_data(is_sprint_active: bool) -> Result<TicketSummary> {    
+pub async fn fetch_ticket_summary_data() -> Result<TicketSummary> {    
     let fetch_client = Arc::new(Client::new());
     
     let region_provider = RegionProviderChain::default_provider().or_else("us-west-2");
@@ -133,10 +133,9 @@ pub async fn fetch_ticket_summary_data(is_sprint_active: bool) -> Result<TicketS
         .filter(|ticket| ticket.details.list_name != "Objectives" && ticket.details.list_name != "To Do" && ticket.details.list_name != "Backlog")
         .collect();
 
-    let mut ticket_records = TicketRecords { tickets: vec![] };
+    let num_of_tickets = tickets.len();
 
     for ticket in tickets.into_iter() {
-        ticket_records.tickets.push(TicketRecord::from(&ticket));
         if ticket.details.list_name == "Done" {
             completed_tickets.push(ticket);
         } else if ticket.details.is_goal {
@@ -151,10 +150,6 @@ pub async fn fetch_ticket_summary_data(is_sprint_active: bool) -> Result<TicketS
             }
         }
     }
-    
-    if is_sprint_active {
-        put_ticket_data(&s3_client, &ticket_records).await?;
-    }
 
     Ok(TicketSummary {
         goal_tickets,
@@ -163,7 +158,7 @@ pub async fn fetch_ticket_summary_data(is_sprint_active: bool) -> Result<TicketS
         open_tickets,
         completed_tickets,
         backlogged_tickets: orphaned_tickets,
-        num_of_tickets: ticket_records.tickets.len() as u32,
+        num_of_tickets: num_of_tickets as u32,
     })
 }
 
@@ -251,7 +246,7 @@ pub fn create_ticket_blocks(tickets: &[Ticket]) -> serde_json::Value {
     list_block(ticket_blocks)
 }
 
-pub async fn create_ticket_summary(ticket_summary: TicketSummary) -> Vec<Value> {
+pub async fn create_ticket_summary(ticket_summary: &TicketSummary) -> Vec<Value> {
     let mut blocks: Vec<serde_json::Value> = vec![];
 
     if !ticket_summary.goal_tickets.is_empty() {

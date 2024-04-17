@@ -1,68 +1,36 @@
-mod components;
-mod date;
-mod ticket_summary;
+mod slack_output;
 mod sprint_summary;
-mod trello;
-mod github;
-mod slack;
-mod s3;
+mod utils;
+mod data_sources;
+mod triggers;
 
 use lambda_http::{run, service_fn, tracing::{self}, Body, Request, Response};
-use anyhow::{Result, anyhow, Context};
+use anyhow::Result;
 use reqwest::StatusCode;
-use crate::slack::{verify_slack_request, SlackRequestBody};
-use crate::sprint_summary::{create_sprint_message};
+use crate::triggers::parse_command;
+use crate::sprint_summary::create_sprint_message;
 use tracing::{error, info};
-use serde::de::DeserializeOwned;
 
 //handle triggers
-//eventbridge
-//start sprint interactive button from kickoff message (confetti?)
+//eventbridge (daily summary & sprint review message)
 
 //create a sprint review/summary message. sprint complete/sprint incomplete at the end. which tells us if we met our goals or not. + %completed.
-
-fn parse_request_body<T: DeserializeOwned>(text: &Body) -> Result<T> {
-    match text {
-       Body::Text(text) => {
-           info!("Body (Text): {}", text);
-           Err(anyhow!("does not accept plain text body"))
-       },
-       Body::Binary(binary) => {
-           if let Ok(text) = std::str::from_utf8(&binary) {
-               info!("Body (Binary as Text): {}", text);
-               let params: T = serde_urlencoded::from_str(text)
-                   .map_err(|e| {
-                       error!("Failed to parse url-encoded body: {}", e);
-                       anyhow!(e)
-                   })?;
-           
-               Ok(params)
-           } else {
-               Err(anyhow!("Body contains non-UTF-8 binary data"))
-           }
-       },
-       Body::Empty => {
-           Err(anyhow!("Body is empty"))
-       },
-   }
-}
-
 
 async fn function_handler(event: Request) -> Result<Response<Body>, lambda_http::Error> {
     info!("Handling request: Method: {:?}, Event: {:?}", event.method(), event);
     
-    if let Err(e) = verify_slack_request(&event) {
-        return Ok(Response::builder()
-            .status(StatusCode::UNAUTHORIZED)
-            .body(Body::from(format!("Invalid request: {}", e)))
-            .expect("Failed to render response"));
-    }
+    // if let Err(e) = verify_slack_request(&event) {
+    //     return Ok(Response::builder()
+    //         .status(StatusCode::UNAUTHORIZED)
+    //         .body(Body::from(format!("Invalid request: {}", e)))
+    //         .expect("Failed to render response"));
+    // }
 
-    let params: SlackRequestBody = parse_request_body(event.body())?;
+    let command = parse_command(event.body())?;
     
-    info!("Parsed params are: {:?}", params);
+    info!("Parsed command is: {:?}", command);
 
-    match create_sprint_message(&params.command, &params.channel_id, &params.text).await {
+    match create_sprint_message(&command.command, &command.channel_id, &command.text).await {
         Ok(()) => {
             let resp = Response::builder()
                 .status(StatusCode::OK)

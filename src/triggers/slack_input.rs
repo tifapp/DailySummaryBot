@@ -50,51 +50,42 @@ pub fn verify_slack_request(req: &Request) -> Result<()> {
 
 
 #[derive(Debug, Deserialize)]
-pub struct SlackRequestBody {
-    pub token: String, //JxPzi5d87tmKzBvRUAyE9bIX,
-    pub channel_id: String, // C06RRR7NBAB,
-    pub user_id: String, //U01CL8PLU72,
-    pub command: String, ///sprint-kickoff,
-    pub text: String, //09/20/2025 test,
-    pub api_app_id: String // A0527UHK2F3,
+pub struct SlackSlashCommandBody {
+    pub token: String,
+    pub channel_id: String,
+    pub user_id: String,
+    pub command: String,
+    pub text: String,
+    pub api_app_id: String
 }
 
-#[derive(Deserialize)]
-struct SlackResponse {
-    ok: bool,
-    error: Option<String>,
+#[derive(Debug, Deserialize)]
+pub struct SlackBlockAction {
+    pub action_id: String,
+    pub block_id: String,
+    pub value: String,
+    #[serde(rename = "type")]
+    pub action_type: String,
 }
 
-pub async fn send_message_to_slack<T: Serialize>(channel_id: &str, blocks: &T) -> Result<()> {
-    let slack_token = env::var("SLACK_OAUTH").expect("SLACK_OAUTH environment variable should exist");
+#[derive(Debug, Deserialize)]
+pub struct SlackBlockActionChannel {
+    pub id: String,
+    pub name: String,
+}
 
-    let client = reqwest::Client::new();
-    
-    let message = json!({
-        "channel": channel_id,
-        "blocks": blocks
-    });
+#[derive(Debug, Deserialize)]
+pub struct SlackBlockActionPayload {
+    #[serde(rename = "type")]
+    pub trigger_type: String,
+    pub api_app_id: String,
+    pub token: String,
+    pub trigger_id: String,
+    pub actions: Vec<SlackBlockAction>,
+    pub channel: SlackBlockActionChannel
+}
 
-    info!("Message to Slack: {}", message);
-
-    let response = client.post("https://slack.com/api/chat.postMessage")
-        .bearer_auth(slack_token)
-        .json(&message)
-        .send()
-        .await?;
-
-    if response.status().is_success() {
-        let response_body = response.text().await?;
-        let slack_response: SlackResponse = serde_json::from_str(&response_body)
-            .map_err(|e| anyhow!("Failed to deserialize Slack response: {}", e))?;
-
-        info!("Response from Slack: {}", response_body);
-        if slack_response.ok {
-            Ok(())
-        } else {
-            Err(anyhow!("Slack API error: {}", slack_response.error.unwrap_or_else(|| "Unknown error".to_string())))
-        }
-    } else {
-        Err(anyhow!("Failed to send message to Slack with status: {}", response.status()))
-    }
+#[derive(Debug, Deserialize)]
+pub struct SlackBlockActionBody {
+    pub payload: SlackBlockActionPayload,
 }

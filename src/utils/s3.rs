@@ -1,11 +1,10 @@
+use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{Client, primitives::ByteStream};
 use lambda_http::tracing::error;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, from_value};
 use anyhow::{Result, Context, anyhow};
 use std::collections::HashMap;
-
-use crate::{sprint_summary::SprintInput, ticket_summary::{Ticket, TicketSummary}, trello::TicketDetails};
 
 async fn get_s3_json(client: &Client, key: &str) -> Result<Option<Value>> {
     let object = match client.get_object()
@@ -76,15 +75,6 @@ pub struct SprintRecord {
     pub trello_board: String,
 }
 
-impl From<&SprintRecord> for SprintInput {
-    fn from(record: &SprintRecord) -> Self {
-        SprintInput {
-            end_date: record.end_date.clone(),
-            name: record.name.clone(),
-        }
-    }
-}
-
 pub async fn get_sprint_data(client: &Client) -> Result<Option<SprintRecord>> {
     get_s3_json(client, "sprint_data.json").await?
         .map(|json_value| {
@@ -116,67 +106,9 @@ pub struct TicketRecord {
     pub last_moved_on: String,
 }
 
-impl From<&Ticket> for TicketRecord {
-    fn from(ticket: &Ticket) -> Self {
-        TicketRecord {
-            id: ticket.details.id.clone(),
-            name: ticket.details.name.clone(),
-            url: ticket.details.url.clone(),
-            list_name: ticket.details.list_name.clone(),
-            is_goal: ticket.details.is_goal,
-            added_on: ticket.added_on.clone(),
-            last_moved_on: ticket.last_moved_on.clone(),
-        }
-    }
-}
-
-impl From<&TicketRecord> for Ticket {
-    fn from(record: &TicketRecord) -> Self {
-        Ticket {
-            members: vec![],
-            pr: None,
-            added_on: record.added_on.clone(),
-            last_moved_on: record.last_moved_on.clone(),
-            details: TicketDetails {            
-                id: record.id.clone(),
-                name: record.name.clone(),
-                list_name: "None".to_string(),      
-                url: record.url.clone(),                          
-                has_description: true,   
-                has_labels: true,                      
-                is_goal: false,  
-                checklist_items: 0,
-                checked_checklist_items: 0,    
-                is_backlogged: true,
-                member_ids: vec![],
-                pr_url: None,        
-            }
-        }
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TicketRecords {
     pub tickets: Vec<TicketRecord>
-}
-
-impl From<TicketSummary> for TicketRecords {
-    fn from(summary: TicketSummary) -> Self {
-        let mut tickets = Vec::new();
-
-        let mut extend_tickets = |vec: Vec<Ticket>| {
-            tickets.extend(vec.iter().map(TicketRecord::from));
-        };
-
-        extend_tickets(summary.blocked_prs);
-        extend_tickets(summary.open_prs);
-        extend_tickets(summary.open_tickets);
-        extend_tickets(summary.completed_tickets);
-        extend_tickets(summary.goal_tickets);
-        extend_tickets(summary.backlogged_tickets);
-
-        TicketRecords { tickets }
-    }
 }
 
 pub async fn get_ticket_data(client: &Client) -> Result<Option<TicketRecords>> {
@@ -206,4 +138,10 @@ pub async fn get_sprint_members(client: &Client) -> Result<Option<HashMap<String
                 .context("Failed to deserialize sprint data")
         })
         .transpose()
+}
+
+pub async fn create_s3_client() -> Client {
+    let region_provider = RegionProviderChain::default_provider().or_else("us-west-2");
+    let config = aws_config::from_env().region(region_provider).load().await;
+    aws_sdk_s3::Client::new(&config)
 }

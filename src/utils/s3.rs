@@ -1,10 +1,12 @@
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{Client, primitives::ByteStream};
-use lambda_http::tracing::error;
+use lambda_runtime::tracing::error;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, from_value};
 use anyhow::{Result, Context, anyhow};
 use std::collections::HashMap;
+
+use super::slack_components::section_block;
 
 async fn get_s3_json(client: &Client, key: &str) -> Result<Option<Value>> {
     let object = match client.get_object()
@@ -138,6 +140,59 @@ pub async fn get_sprint_members(client: &Client) -> Result<Option<HashMap<String
                 .context("Failed to deserialize sprint data")
         })
         .transpose()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HistoricalRecord {
+    pub name: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub percent_complete: f64,
+    pub num_tickets_complete: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HistoricalRecords {
+    pub history: Vec<HistoricalRecord>
+}
+
+
+impl HistoricalRecords {
+    pub fn into_slack_blocks(&self) -> Vec<Value> {
+        let mut blocks: Vec<serde_json::Value> = vec![section_block("\n\n*Previous Sprints:*")];
+
+        blocks.extend(self.history.iter().map(|record| {
+            section_block(&format!(
+                "{} - {}: *{} tickets | {:.2}%*",
+                record.start_date,
+                record.end_date,
+                record.num_tickets_complete,
+                record.percent_complete
+            ))
+        }));
+
+        blocks
+    }
+}
+
+pub async fn get_historical_data(client: &Client) -> Result<Option<HistoricalRecords>> {
+    get_s3_json(client, "historical_data.json").await?
+        .map(|json_value| {
+            from_value::<HistoricalRecords>(json_value)
+                .context("Failed to deserialize sprint data")
+        })
+        .transpose()
+}
+
+pub async fn put_historical_data(client: &Client, historical_data: &HistoricalRecords) -> Result<()> {
+    let historical_data_value = serde_json::to_value(historical_data)
+        .context("Failed to convert historical data to JSON value")?;
+
+    put_s3_json(client, "historical_data.json", &historical_data_value).await
+}
+
+pub async fn clear_historical_data(client: &Client) -> Result<()> {
+    delete_s3_json(client, "historical_data.json").await
 }
 
 pub async fn create_s3_client() -> Client {

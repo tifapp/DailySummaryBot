@@ -50,7 +50,6 @@ pub struct TicketDetails {
     pub has_description: bool,
     pub has_labels: bool,
     pub is_goal: bool,
-    pub is_backlogged: bool,
     pub checklist_items: u32,
     pub checked_checklist_items: u32,
     pub pr_url: Option<String>,
@@ -94,44 +93,49 @@ async fn fetch_trello_cards(client: &Client) -> Result<Vec<TrelloCard>, Error> {
     Ok(serde_json::from_str(&body).expect("Failed to parse Trello cards"))
 }
 
-pub async fn fetch_ticket_details(client: Arc<Client>) -> Result<Vec<TicketDetails>, Error> {
-    let lists = fetch_trello_lists(&client).await?;
-    let list_name_map = Arc::new(lists.into_iter().map(|list| (list.id, list.name)).collect::<HashMap<_, _>>());
-    let cards = fetch_trello_cards(&client).await?;
-    
-    Ok(cards.into_iter().map(|card| {
-        let list_name_map_clone = Arc::clone(&list_name_map);
+pub trait TicketClient {
+    async fn fetch_ticket_details(&self) -> Result<Vec<TicketDetails>, Error>;
+}
 
-        TicketDetails {
-            id: card.id.clone(),
-            name: card.name,
-            member_ids: card.idMembers,
-            list_name: list_name_map_clone.get(&card.idList).unwrap_or(&"None".to_string()).clone(),
-            url: card.url,
-            has_labels:
-                if card.labels.len() > 0 {
-                    true
-                } else {
-                    false
-                },
-            has_description: 
-                if card.desc.as_ref().map_or(true, |d| d.is_empty()) {
-                    false
-                } else {
-                    true
-                },
-            is_goal: card.labels.iter().any(|label| label.name == "Goal"),
-            checklist_items: card.badges.checkItems,
-            checked_checklist_items: card.badges.checkItemsChecked,
-            pr_url: card.attachments.iter()
-                .find_map(|attachment| {
-                    if attachment.url.contains("github.com") && attachment.url.contains("/pull/") {
-                        Some(attachment.url.clone())
+impl TicketClient for Client {
+    async fn fetch_ticket_details(&self) -> Result<Vec<TicketDetails>, Error> {
+        let lists = fetch_trello_lists(&self).await?;
+        let list_name_map = Arc::new(lists.into_iter().map(|list| (list.id, list.name)).collect::<HashMap<_, _>>());
+        let cards = fetch_trello_cards(&self).await?;
+        
+        Ok(cards.into_iter().map(|card| {
+            let list_name_map_clone = Arc::clone(&list_name_map);
+    
+            TicketDetails {
+                id: card.id.clone(),
+                name: card.name,
+                member_ids: card.idMembers,
+                list_name: list_name_map_clone.get(&card.idList).unwrap_or(&"None".to_string()).clone(),
+                url: card.url,
+                has_labels:
+                    if card.labels.len() > 0 {
+                        true
                     } else {
-                        None
-                    }
-                }),
-            is_backlogged: false,
-        }
-    }).collect::<Vec<TicketDetails>>())
+                        false
+                    },
+                has_description: 
+                    if card.desc.as_ref().map_or(true, |d| d.is_empty()) {
+                        false
+                    } else {
+                        true
+                    },
+                is_goal: card.labels.iter().any(|label| label.name == "Goal"),
+                checklist_items: card.badges.checkItems,
+                checked_checklist_items: card.badges.checkItemsChecked,
+                pr_url: card.attachments.iter()
+                    .find_map(|attachment| {
+                        if attachment.url.contains("github.com") && attachment.url.contains("/pull/") {
+                            Some(attachment.url.clone())
+                        } else {
+                            None
+                        }
+                    }),
+            }
+        }).collect::<Vec<TicketDetails>>())
+    }    
 }

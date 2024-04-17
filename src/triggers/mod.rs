@@ -2,7 +2,6 @@ mod slack_input;
 
 use serde::{de::DeserializeOwned, Deserialize};
 use crate::tracing::{error, info};
-use lambda_http::Body;
 use anyhow::{Result, anyhow};
 
 use self::slack_input::{SlackBlockActionBody, SlackSlashCommandBody};
@@ -48,33 +47,25 @@ impl From<SlackBlockActionBody> for Triggers {
     }
 }
 
-fn parse_request_body<T: DeserializeOwned>(text: &Body) -> Result<T> {
-    match text {
-       Body::Text(text) => {
-           info!("Body (Text): {}", text);
-           Err(anyhow!("does not accept plain text body"))
-       },
-       Body::Binary(binary) => {
-           if let Ok(text) = std::str::from_utf8(&binary) {
-               info!("Body (Binary as Text): {}", text);
-               let params: T = serde_urlencoded::from_str(text)
-                   .map_err(|e| {
-                       error!("Failed to parse url-encoded body: {}", e);
-                       anyhow!(e)
-                   })?;
-           
-               Ok(params)
-           } else {
-               Err(anyhow!("Body contains non-UTF-8 binary data"))
-           }
-       },
-       Body::Empty => {
-           Err(anyhow!("Body is empty"))
-       },
-   }
+fn parse_request_body<T: DeserializeOwned>(binary: &[u8]) -> Result<T> {
+    match std::str::from_utf8(binary) {
+        Ok(text) => {
+            info!("Body (Binary as Text): {}", text);
+            // Try to deserialize the URL-encoded text to the expected type T
+            serde_urlencoded::from_str(text)
+                .map_err(|e| {
+                    error!("Failed to parse url-encoded body: {}", e);
+                    anyhow!(e)
+                })
+        },
+        Err(_) => {
+            error!("Body contains non-UTF-8 binary data");
+            Err(anyhow!("Body contains non-UTF-8 binary data"))
+        }
+    }
 }
 
-pub fn parse_command(body: &Body) -> Result<Command, anyhow::Error> {
+pub fn parse_command(body: &Vec<u8>) -> Result<Command, anyhow::Error> {
     let trigger_result = parse_request_body::<SlackSlashCommandBody>(body)
         .map(Triggers::from)
         .or_else(|_| parse_request_body::<SlackBlockActionBody>(body).map(Triggers::from));

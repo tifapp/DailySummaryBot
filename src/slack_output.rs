@@ -4,7 +4,6 @@ use serde_json::json;
 use crate::tracing::info;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use lambda_http::{Request, Body};
 use anyhow::{Result, anyhow};
 
 #[derive(Deserialize)]

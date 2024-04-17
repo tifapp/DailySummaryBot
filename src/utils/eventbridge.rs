@@ -10,7 +10,7 @@ pub async fn create_eventbridge_client() -> Client {
 
 pub trait EventBridgeExtensions {
     async fn create_daily_trigger_rule(&self, rule_name: &str) -> Result<()>;
-    async fn delete_rule(&self, rule_name: &str) -> Result<()>;
+    async fn delete_daily_trigger_rule(&self, rule_name: &str) -> Result<()>;
 }
 
 impl EventBridgeExtensions for Client {
@@ -39,7 +39,7 @@ impl EventBridgeExtensions for Client {
         Ok(())
     }
 
-    async fn delete_rule(&self, rule_name: &str) -> Result<()> {
+    async fn delete_daily_trigger_rule(&self, rule_name: &str) -> Result<()> {
         self.delete_rule().name(rule_name).send().await.map_err(|e| anyhow!("Failed to delete rule: {}", e))?;
 
         Ok(())

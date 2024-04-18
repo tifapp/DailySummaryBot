@@ -4,7 +4,7 @@ use lambda_runtime::tracing::error;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, from_value};
 use anyhow::{Result, Context, anyhow};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use super::slack_components::section_block;
 
@@ -110,7 +110,7 @@ pub struct TicketRecord {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TicketRecords {
-    pub tickets: Vec<TicketRecord>
+    pub tickets: VecDeque<TicketRecord>
 }
 
 pub async fn get_ticket_data(client: &Client) -> Result<Option<TicketRecords>> {

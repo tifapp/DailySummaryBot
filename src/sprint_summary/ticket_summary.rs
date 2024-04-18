@@ -1,17 +1,32 @@
+use std::collections::VecDeque;
+
 use serde::Serialize;
 use serde_json::Value;
-use super::ticket_sources::Ticket;
 use crate::utils::slack_components::{divider_block, list_block, section_block};
 use crate::utils::s3::{TicketRecord, TicketRecords};
+use super::ticket_sources::Ticket;
+
+trait PrioritizedPush {
+    fn prioritized_push(&mut self, ticket: Ticket);
+}
+
+impl PrioritizedPush for VecDeque<Ticket> {
+    fn prioritized_push(&mut self, ticket: Ticket) {
+        if ticket.details.is_goal {
+            self.push_front(ticket);
+        } else {
+            self.push_back(ticket);
+        }
+    }
+}
 
 #[derive(Debug, Serialize)]
 pub struct TicketSummary {
-    pub blocked_prs: Vec<Ticket>,
-    pub open_prs: Vec<Ticket>,
-    pub open_tickets: Vec<Ticket>,
-    pub completed_tickets: Vec<Ticket>,
-    pub goal_tickets: Vec<Ticket>,
-    pub backlogged_tickets: Vec<Ticket>,
+    blocked_prs: VecDeque<Ticket>,
+    open_prs: VecDeque<Ticket>,
+    open_tickets: VecDeque<Ticket>,
+    backlogged_tickets: VecDeque<Ticket>,
+    pub completed_tickets: VecDeque<Ticket>,
     pub ticket_count: u32,
     pub open_ticket_count: u32,
     pub completed_percentage: f64,
@@ -19,12 +34,11 @@ pub struct TicketSummary {
 
 impl From<Vec<Ticket>> for TicketSummary {
     fn from(tickets: Vec<Ticket>) -> Self {
-        let mut blocked_prs = Vec::new();
-        let mut open_prs = Vec::new();
-        let mut open_tickets = Vec::new();
-        let mut completed_tickets = Vec::new();
-        let mut goal_tickets = Vec::new();
-        let mut backlogged_tickets = Vec::new();
+        let mut blocked_prs = VecDeque::new();
+        let mut open_prs = VecDeque::new();
+        let mut open_tickets = VecDeque::new();
+        let mut completed_tickets = VecDeque::new();
+        let mut backlogged_tickets = VecDeque::new();
 
         let filtered_tickets: Vec<Ticket> = tickets.into_iter()
             .filter(|ticket| ticket.details.list_name != "Objectives" && ticket.details.list_name != "To Do" && ticket.details.list_name != "Backlog")
@@ -33,29 +47,30 @@ impl From<Vec<Ticket>> for TicketSummary {
         let ticket_count = filtered_tickets.len() as u32;
         let mut open_ticket_count = 0;
 
+        
         for ticket in filtered_tickets {
             if ticket.is_backlogged {
-                backlogged_tickets.push(ticket)
+                backlogged_tickets.prioritized_push(ticket);
             } else if ticket.details.list_name == "Done" {
-                completed_tickets.push(ticket);
-            } else if ticket.details.is_goal {
-                open_ticket_count += 1;
-                goal_tickets.push(ticket);
+                completed_tickets.prioritized_push(ticket);
             } else {
                 open_ticket_count += 1;
                 match &ticket.pr {
-                    Some(pr) if !pr.failing_check_runs.is_empty() => blocked_prs.push(ticket),
-                    Some(pr) if !pr.is_draft => open_prs.push(ticket),
-                    Some(pr) if pr.is_draft => open_tickets.push(ticket),
-                    Some(_) => open_tickets.push(ticket),
-                    None => open_tickets.push(ticket),
+                    Some(pr) if !pr.failing_check_runs.is_empty() => {
+                        blocked_prs.prioritized_push(ticket);
+                    },
+                    Some(pr) if !pr.is_draft => {
+                        open_prs.prioritized_push(ticket);
+                    },
+                    Some(_) | None => {
+                        open_tickets.prioritized_push(ticket);
+                    },
                 }
             }
         }
 
         TicketSummary {
             completed_percentage: completed_tickets.len() as f64 / ticket_count as f64,
-            goal_tickets,
             blocked_prs,
             open_prs,
             open_tickets,
@@ -70,12 +85,6 @@ impl From<Vec<Ticket>> for TicketSummary {
 impl TicketSummary {
     pub fn into_slack_blocks(&self) -> Vec<Value> {
         let mut blocks: Vec<serde_json::Value> = vec![];
-
-        if !self.goal_tickets.is_empty() {
-            blocks.push(divider_block());
-            blocks.push(section_block("\n*🏁 Goals*"));
-            blocks.push(list_block(self.goal_tickets.iter().map(|ticket| ticket.into_slack_blocks()).collect()));
-        }
 
         if !self.open_prs.is_empty() {
             blocks.push(divider_block());
@@ -111,9 +120,9 @@ impl TicketSummary {
 
 impl From<TicketSummary> for TicketRecords {
     fn from(summary: TicketSummary) -> Self {
-        let mut tickets = Vec::new();
+        let mut tickets = VecDeque::new();
 
-        let mut extend_tickets = |vec: Vec<Ticket>| {
+        let mut extend_tickets = |vec: VecDeque<Ticket>| {
             tickets.extend(vec.iter().map(TicketRecord::from));
         };
 
@@ -121,7 +130,6 @@ impl From<TicketSummary> for TicketRecords {
         extend_tickets(summary.open_prs);
         extend_tickets(summary.open_tickets);
         extend_tickets(summary.completed_tickets);
-        extend_tickets(summary.goal_tickets);
         extend_tickets(summary.backlogged_tickets);
 
         TicketRecords { tickets }

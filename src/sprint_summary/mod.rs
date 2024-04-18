@@ -1,17 +1,21 @@
 mod ticket_summary;
 mod ticket_sources;
+mod triggers;
+mod validation;
 
 use std::env;
 use chrono::NaiveDate;
 use anyhow::{Context, Result, anyhow};
+use lambda_runtime::LambdaEvent;
+use serde_json::Value;
 use ticket_sources::fetch_ticket_summary_data;
 use crate::slack_output::send_message_to_slack;
 use crate::utils::date::{days_between, print_current_date};
 use crate::utils::eventbridge::{create_eventbridge_client, EventBridgeExtensions};
 use crate::utils::slack_components::{button_block, header_block, section_block};
 use crate::utils::s3::{clear_sprint_data, clear_ticket_data, create_s3_client, get_historical_data, get_sprint_data, get_sprint_members, get_ticket_data, put_historical_data, put_sprint_data, put_ticket_data, HistoricalRecord, HistoricalRecords, SprintRecord};
-
 use self::ticket_summary::TicketSummary;
+use self::triggers::{ConvertToTrigger, Trigger};
 
 pub struct SprintParams {
     pub end_date: String,
@@ -71,20 +75,21 @@ fn parse_sprint_params(text: &str) -> Result<SprintParams> {
     Ok(SprintParams {end_date: end_date.to_string(), name})
 }
 
-pub async fn create_sprint_message(command: &str, channel_id: &str, text: &str) -> Result<()> { 
-    let s3_client = create_s3_client().await;
+pub async fn create_sprint_message(event: LambdaEvent<Value>) -> Result<()> { 
+    let trigger: Trigger = event.convert_to_trigger()?;
 
+    let s3_client = create_s3_client().await;
     let active_sprint_record = get_sprint_data(&s3_client).await?;
     let previous_ticket_data = get_ticket_data(&s3_client).await?;
     let user_mapping = get_sprint_members(&s3_client).await?; 
     let ticket_summary: TicketSummary = fetch_ticket_summary_data(previous_ticket_data, user_mapping).await?.into();
     
-    match command {
+    match trigger.command.as_str() {
         "/sprint-kickoff-confirm" => {
             if active_sprint_record.is_some() {
                 Err(anyhow!("A sprint is already in progress"))
             } else {
-                let new_sprint_input = parse_sprint_params(&text)?;
+                let new_sprint_input = parse_sprint_params(&trigger.text)?;
                 let eventbridge_client = create_eventbridge_client().await;
                 eventbridge_client.create_daily_trigger_rule(&new_sprint_input.name).await?;
                 let message_blocks = vec![
@@ -94,18 +99,18 @@ pub async fn create_sprint_message(command: &str, channel_id: &str, text: &str) 
                 put_sprint_data(&s3_client, &SprintRecord {
                     end_date: new_sprint_input.end_date,
                     name: new_sprint_input.name,
-                    channel_id: channel_id.to_string(),
+                    channel_id: trigger.channel_id.to_string(),
                     start_date: print_current_date(),
                     trello_board: env::var("TRELLO_BOARD_ID").expect("TRELLO_BOARD_ID environment variable should exist") //TODO: parameterize
                 }).await?;
-                send_message_to_slack(&channel_id, &message_blocks).await.context("Failed to send message to Slack")
+                send_message_to_slack(&trigger.channel_id, &message_blocks).await.context("Failed to send message to Slack")
             }
         },
         "/sprint-kickoff" => {
             if active_sprint_record.is_some() {
                 Err(anyhow!("A sprint is already in progress"))
             } else {
-                let new_sprint_input = parse_sprint_params(&text)?;
+                let new_sprint_input = parse_sprint_params(&trigger.text)?;
                 let mut message_blocks = vec![
                     header_block(&format!("🔭 Sprint {} Preview: {} - {}", new_sprint_input.name, print_current_date(), new_sprint_input.end_date)),
                     section_block(&format!("*{} Tickets*\n*{:?} Days*", ticket_summary.ticket_count, days_between(Some(&print_current_date()), &new_sprint_input.end_date)?))
@@ -120,8 +125,8 @@ pub async fn create_sprint_message(command: &str, channel_id: &str, text: &str) 
                     message_blocks.extend(historical_data.into_slack_blocks());
                 }
 
-                message_blocks.push(button_block("Proceed", "/sprint-kickoff-confirm", text));
-                send_message_to_slack(&channel_id, &message_blocks).await.context("Failed to send message to Slack")
+                message_blocks.push(button_block("Proceed", "/sprint-kickoff-confirm",  &trigger.text));
+                send_message_to_slack(&trigger.channel_id, &message_blocks).await.context("Failed to send message to Slack")
             }
         },
         "/daily-trigger" => {            
@@ -138,7 +143,7 @@ pub async fn create_sprint_message(command: &str, channel_id: &str, text: &str) 
 
                 put_ticket_data(&s3_client, &ticket_summary.into()).await?;
                 
-                send_message_to_slack(&channel_id, &message_blocks).await.context("Failed to send message to Slack")
+                send_message_to_slack(&trigger.channel_id, &message_blocks).await.context("Failed to send message to Slack")
             } else {
                 let eventbridge_client = create_eventbridge_client().await;
                 eventbridge_client.delete_daily_trigger_rule(&record.name).await?;
@@ -168,11 +173,11 @@ pub async fn create_sprint_message(command: &str, channel_id: &str, text: &str) 
                 });
                 
                 put_historical_data(&s3_client, &historical_data).await?;
-                send_message_to_slack(&channel_id, &message_blocks).await.context("Failed to send message to Slack")
+                send_message_to_slack(&trigger.channel_id, &message_blocks).await.context("Failed to send message to Slack")
             }
         },
         "/sprint-check-in" => {
-            if !text.trim().is_empty() {
+            if !trigger.text.trim().is_empty() {
                 Err(anyhow!("No input allowed for sprint check-in"))
             } else if active_sprint_record.is_none() {
                 Err(anyhow!("No active sprint"))
@@ -189,9 +194,9 @@ pub async fn create_sprint_message(command: &str, channel_id: &str, text: &str) 
 
                 put_ticket_data(&s3_client, &ticket_summary.into()).await?;
                 
-                send_message_to_slack(&channel_id, &message_blocks).await.context("Failed to send message to Slack")
+                send_message_to_slack(&trigger.channel_id, &message_blocks).await.context("Failed to send message to Slack")
             }
         },
-        _ => Err(anyhow!("Unsupported command '{}'", command))
+        _ => Err(anyhow!("Unsupported command '{:?}'", trigger))
     }
 }

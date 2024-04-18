@@ -1,54 +1,17 @@
 mod slack_output;
 mod sprint_summary;
 mod utils;
-mod triggers;
-mod validation;
 
 use lambda_runtime::{run, service_fn, tracing, Error, LambdaEvent};
-use anyhow::{anyhow, Result};
-use serde_json::{from_value, json, Value};
-use crate::triggers::{parse_command, Command};
+use anyhow::Result;
+use serde_json::{json, Value};
 use crate::sprint_summary::create_sprint_message;
-use crate::validation::{verify_slack_request, HttpRequest};
 use tracing::{error, info};
 
-async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
-    let (value, _context) = event.into_parts();
+async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {    
+    info!("Input is: {:?}", event);
 
-    let request_result: Result<HttpRequest, _> = from_value(value);
-
-    let command = match request_result {
-        Ok(request) if request.httpMethod.is_some() => {
-            info!("Handling http request: Method: {:?}, Body: {:?}", request.httpMethod, request.body);
-            
-            if let Err(e) = verify_slack_request(&request) {
-                return Ok(json!({
-                    "statusCode": 401,
-                    "body": format!("Invalid request:: {}", e)
-                }));
-            }
-    
-            request.body.map_or_else(
-                || Err(anyhow!("No body in request")),
-                |body| parse_command(&body)
-            )
-        },
-        Ok(_) => {
-            Ok(Command {
-                channel_id: "".to_string(),
-                command: "/daily-trigger".to_string(),
-                text: "".to_string(),
-            })
-        },
-        Err(e) => {
-            error!("Error parsing HttpRequest: {:?}", e);
-            Err(anyhow!("Failed to parse HttpRequest: {}", e))
-        }
-    }?;
-    
-    info!("Parsed command is: {:?}", command);
-
-    match create_sprint_message(&command.command, &command.channel_id, &command.text).await {
+    match create_sprint_message(event).await {
         Ok(()) => {
             Ok(json!({
                 "statusCode": 200,

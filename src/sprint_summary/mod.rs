@@ -8,13 +8,14 @@ use std::env;
 use chrono::NaiveDate;
 use anyhow::{Context, Result, anyhow};
 use lambda_runtime::LambdaEvent;
+use reqwest::Client;
 use serde_json::Value;
-use ticket_sources::fetch_ticket_summary_data;
 use crate::slack_output::send_message_to_slack;
 use crate::utils::date::{days_between, print_current_date};
 use crate::utils::eventbridge::{create_eventbridge_client, EventBridgeExtensions};
 use crate::utils::slack_components::{context_block, header_block, primary_button_block, section_block};
 use crate::utils::s3::{clear_sprint_data, clear_ticket_data, create_s3_client, get_historical_data, get_sprint_data, get_sprint_members, get_ticket_data, put_historical_data, put_sprint_data, put_ticket_data, HistoricalRecord, HistoricalRecords, SprintRecord};
+use self::ticket_sources::TicketSummaryClient;
 use self::ticket_summary::TicketSummary;
 use self::triggers::{ConvertToTrigger, Trigger};
 
@@ -83,7 +84,9 @@ pub async fn create_sprint_message(event: LambdaEvent<Value>) -> Result<()> {
     let active_sprint_record = get_sprint_data(&s3_client).await?;
     let previous_ticket_data = get_ticket_data(&s3_client).await?;
     let user_mapping = get_sprint_members(&s3_client).await?; 
-    let ticket_summary: TicketSummary = fetch_ticket_summary_data(previous_ticket_data, user_mapping).await?.into();
+
+    let fetch_client = Client::new();    
+    let ticket_summary = fetch_client.fetch_ticket_summary(previous_ticket_data, user_mapping).await?;
     
     let trello_board_id = env::var("TRELLO_BOARD_ID").expect("TRELLO_BOARD_ID environment variable should exist");
     let board_link_block = context_block(&format!("<https://trello.com/b/{}|View sprint board>", trello_board_id));

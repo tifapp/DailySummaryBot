@@ -77,11 +77,11 @@ async fn fetch_trello_cards(client: &Client) -> Result<Vec<TrelloCard>, Error> {
     Ok(serde_json::from_str(&body).expect("Failed to parse Trello cards"))
 }
 
-pub trait TicketClient {
+pub trait TicketDetailsClient {
     async fn fetch_ticket_details(&self) -> Result<Vec<TicketDetails>, Error>;
 }
 
-impl TicketClient for Client {
+impl TicketDetailsClient for Client {
     async fn fetch_ticket_details(&self) -> Result<Vec<TicketDetails>, Error> {
         let lists = fetch_trello_lists(&self).await?;
         let list_name_map = Arc::new(lists.into_iter().map(|list| (list.id, list.name)).collect::<HashMap<_, _>>());

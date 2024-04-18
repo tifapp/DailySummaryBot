@@ -65,11 +65,16 @@ impl ConvertToTrigger for LambdaEvent<Value> {
                     .map(Triggers::from)
                     .map(Trigger::from)
                     .ok();
-
-                let block_action_result = request.parse_request_body::<SlackBlockActionBody>()
+            
+                let block_action_result = serde_json::from_str::<SlackBlockActionBody>(&request.parse_request_body::<String>()?)
+                    .map_err(|e| {
+                        eprintln!("Failed to parse JSON body: {}", e);
+                        anyhow!("Failed to parse JSON body: {}", e)
+                    })
                     .map(Triggers::from)
                     .map(Trigger::from)
                     .ok();
+
 
                 slash_command_result.or(block_action_result).ok_or_else(|| anyhow!("Failed to parse Slack command"))
             },

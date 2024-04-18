@@ -1,8 +1,8 @@
-use std::{env, sync::Arc};
-use serde::{Serialize, Deserialize};
+use std::env;
+use serde::Deserialize;
 use anyhow::Result;
 use reqwest::{Client, Error};
-use crate::tracing::info;
+use crate::{sprint_summary::ticket::{CheckRunDetails, PullRequest}, tracing::info};
 
 #[derive(Deserialize)]
 struct GithubHead {
@@ -27,22 +27,6 @@ struct GithubCheckRun {
 #[derive(Deserialize, Debug)]
 struct GithubCheckRuns {
     check_runs: Vec<GithubCheckRun>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CheckRunDetails {
-    pub name: String,
-    pub details_url: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PullRequest {
-    pub pr_url: String,
-    pub state: String,
-    pub comments: u32,
-    pub is_draft: bool,
-    pub action_required_check_runs: Vec<CheckRunDetails>,
-    pub failing_check_runs: Vec<CheckRunDetails>,
 }
 
 fn check_overall_status(check_runs: &GithubCheckRuns) -> (String, Vec<CheckRunDetails>, Vec<CheckRunDetails>) {

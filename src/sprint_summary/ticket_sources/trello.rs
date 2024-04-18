@@ -2,7 +2,7 @@ use std::{collections::HashMap, env, sync::Arc};
 use serde::{Deserialize, Serialize};
 use reqwest::{Client, Error};
 use anyhow::Result;
-use crate::tracing::info;
+use crate::{sprint_summary::ticket::TicketDetails, tracing::info};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TrelloAttachment {
@@ -37,22 +37,6 @@ struct TrelloCard {
 struct TrelloList {
     id: String,
     name: String,
-}
-
-//generic inteface to work with any ticket tracking system
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TicketDetails {
-    pub id: String,
-    pub name: String,
-    pub list_name: String,
-    pub url: String,
-    pub member_ids: Vec<String>,
-    pub has_description: bool,
-    pub has_labels: bool,
-    pub is_goal: bool,
-    pub checklist_items: u32,
-    pub checked_checklist_items: u32,
-    pub pr_url: Option<String>,
 }
 
 async fn fetch_trello_lists(client: &Client) -> Result<Vec<TrelloList>, Error> {

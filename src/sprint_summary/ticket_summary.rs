@@ -4,7 +4,7 @@ use serde::Serialize;
 use serde_json::Value;
 use crate::utils::slack_components::{divider_block, list_block, section_block};
 use crate::utils::s3::{TicketRecord, TicketRecords};
-use super::ticket_sources::Ticket;
+use super::ticket::Ticket;
 
 trait PrioritizedPush {
     fn prioritized_push(&mut self, ticket: Ticket);

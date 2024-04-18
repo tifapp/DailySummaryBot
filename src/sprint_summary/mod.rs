@@ -1,3 +1,4 @@
+mod ticket;
 mod ticket_summary;
 mod ticket_sources;
 mod triggers;
@@ -156,7 +157,7 @@ pub async fn create_sprint_message(event: LambdaEvent<Value>) -> Result<()> {
                 let eventbridge_client = create_eventbridge_client().await;
                 eventbridge_client.delete_daily_trigger_rule(&record.name).await?;
                 clear_sprint_data(&s3_client).await?;
-                clear_ticket_data(&s3_client).await?;
+                clear_ticket_data(&s3_client).await?; //only clear tickets completed. add a snail to tickets that carry over.
                 
                 let mut message_blocks = vec![
                     header_block(&format!("🎆 Sprint {} Review: {} - {}", record.name, print_current_date(), record.end_date)),

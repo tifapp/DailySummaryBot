@@ -12,7 +12,7 @@ use ticket_sources::fetch_ticket_summary_data;
 use crate::slack_output::send_message_to_slack;
 use crate::utils::date::{days_between, print_current_date};
 use crate::utils::eventbridge::{create_eventbridge_client, EventBridgeExtensions};
-use crate::utils::slack_components::{button_block, header_block, section_block};
+use crate::utils::slack_components::{context_block, header_block, primary_button_block, section_block};
 use crate::utils::s3::{clear_sprint_data, clear_ticket_data, create_s3_client, get_historical_data, get_sprint_data, get_sprint_members, get_ticket_data, put_historical_data, put_sprint_data, put_ticket_data, HistoricalRecord, HistoricalRecords, SprintRecord};
 use self::ticket_summary::TicketSummary;
 use self::triggers::{ConvertToTrigger, Trigger};
@@ -84,6 +84,12 @@ pub async fn create_sprint_message(event: LambdaEvent<Value>) -> Result<()> {
     let user_mapping = get_sprint_members(&s3_client).await?; 
     let ticket_summary: TicketSummary = fetch_ticket_summary_data(previous_ticket_data, user_mapping).await?.into();
     
+    let trello_board_id = env::var("TRELLO_BOARD_ID").expect("TRELLO_BOARD_ID environment variable should exist");
+    let board_link_block = context_block(&format!("<https://trello.com/b/{}|View sprint board>", trello_board_id));
+    //TODO: Make a function of sprint summary?
+
+    //Maybe a constructor for sprint_summary, and then sprint_summary can have different impl methods for the different messages it can send based off a given command.
+    
     match trigger.command.as_str() {
         "/sprint-kickoff-confirm" => {
             if active_sprint_record.is_some() {
@@ -93,7 +99,8 @@ pub async fn create_sprint_message(event: LambdaEvent<Value>) -> Result<()> {
                 let eventbridge_client = create_eventbridge_client().await;
                 eventbridge_client.create_daily_trigger_rule(&new_sprint_input.name).await?;
                 let message_blocks = vec![
-                    header_block(&format!("🚀 Sprint {} Kickoff: {} - {}\n\nSprint starts now!", new_sprint_input.name, print_current_date(), new_sprint_input.end_date))
+                    header_block(&format!("🚀 Sprint {} Kickoff: {} - {}\n\nSprint starts now!", new_sprint_input.name, print_current_date(), new_sprint_input.end_date)),
+                    board_link_block
                 ];
                 put_ticket_data(&s3_client, &ticket_summary.into()).await?;
                 put_sprint_data(&s3_client, &SprintRecord {
@@ -113,7 +120,7 @@ pub async fn create_sprint_message(event: LambdaEvent<Value>) -> Result<()> {
                 let new_sprint_input = parse_sprint_params(&trigger.text)?;
                 let mut message_blocks = vec![
                     header_block(&format!("🔭 Sprint {} Preview: {} - {}", new_sprint_input.name, print_current_date(), new_sprint_input.end_date)),
-                    section_block(&format!("*{} Tickets*\n*{:?} Days*", ticket_summary.ticket_count, days_between(Some(&print_current_date()), &new_sprint_input.end_date)?))
+                    section_block(&format!("*{} Tickets*\n*{:?} Days*", ticket_summary.open_ticket_count, days_between(Some(&print_current_date()), &new_sprint_input.end_date)?))
                 ];
                 message_blocks.extend(ticket_summary.into_slack_blocks());
 
@@ -125,7 +132,8 @@ pub async fn create_sprint_message(event: LambdaEvent<Value>) -> Result<()> {
                     message_blocks.extend(historical_data.into_slack_blocks());
                 }
 
-                message_blocks.push(button_block("Proceed", "/sprint-kickoff-confirm",  &trigger.text));
+                message_blocks.push(board_link_block);
+                message_blocks.push(primary_button_block("Kick Off", "/sprint-kickoff-confirm",  &trigger.text));
                 send_message_to_slack(&trigger.channel_id, &message_blocks).await.context("Failed to send message to Slack")
             }
         },
@@ -138,8 +146,8 @@ pub async fn create_sprint_message(event: LambdaEvent<Value>) -> Result<()> {
                     section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint.", ticket_summary.open_ticket_count, ticket_summary.ticket_count, record.days_until_end())),
                     section_block(&format!("\n*{:.2}% of tasks completed.*", ticket_summary.completed_percentage))
                 ];
-                
                 message_blocks.extend(ticket_summary.into_slack_blocks());
+                message_blocks.push(board_link_block);
 
                 put_ticket_data(&s3_client, &ticket_summary.into()).await?;
                 
@@ -163,6 +171,8 @@ pub async fn create_sprint_message(event: LambdaEvent<Value>) -> Result<()> {
                 if !historical_data.history.is_empty() {
                     message_blocks.extend(historical_data.into_slack_blocks());
                 }
+                
+                message_blocks.push(board_link_block);
 
                 historical_data.history.push(HistoricalRecord {
                     name: record.name.clone(),
@@ -191,6 +201,7 @@ pub async fn create_sprint_message(event: LambdaEvent<Value>) -> Result<()> {
                 ];
 
                 message_blocks.extend(ticket_summary.into_slack_blocks());
+                message_blocks.push(board_link_block);
 
                 put_ticket_data(&s3_client, &ticket_summary.into()).await?;
                 
@@ -200,3 +211,4 @@ pub async fn create_sprint_message(event: LambdaEvent<Value>) -> Result<()> {
         _ => Err(anyhow!("Unsupported command '{:?}'", trigger))
     }
 }
+//TODO: Find better way of organizing this match code

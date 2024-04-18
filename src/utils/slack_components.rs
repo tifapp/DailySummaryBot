@@ -95,6 +95,25 @@ pub fn user_element(user_id: &str) -> serde_json::Value {
     })
 }
 
+pub fn primary_button_block(label: &str, action_id: &str, value: &str) -> Value {
+    json!({
+        "type": "actions",
+        "elements": [
+            {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": label,
+                    "emoji": true
+                },
+                "action_id": action_id,
+                "value": value,
+                "style": "primary"
+            }
+        ]
+    })
+}
+
 pub fn button_block(label: &str, action_id: &str, value: &str) -> Value {
     json!({
         "type": "actions",

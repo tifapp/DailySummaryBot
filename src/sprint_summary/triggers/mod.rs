@@ -1,5 +1,7 @@
 mod slack_input;
 
+use std::collections::HashMap;
+
 use lambda_runtime::LambdaEvent;
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::Value;
@@ -61,20 +63,48 @@ impl ConvertToTrigger for LambdaEvent<Value> {
 
         match request.http_method {
             Some(_) => {
+                //make a From impl from request to slackslashcommandbody
                 let slash_command_result = request.parse_request_body::<SlackSlashCommandBody>()
                     .map(Triggers::from)
                     .map(Trigger::from)
                     .ok();
             
-                let block_action_result = serde_json::from_str::<SlackBlockActionBody>(&request.parse_request_body::<String>()?)
-                    .map_err(|e| {
-                        eprintln!("Failed to parse JSON body: {}", e);
-                        anyhow!("Failed to parse JSON body: {}", e)
-                    })
-                    .map(Triggers::from)
-                    .map(Trigger::from)
-                    .ok();
+                //make a From impl from request to SlackBlockActionBody
+                // let block_action_result = serde_json::from_str::<SlackBlockActionBody>(&request.parse_request_body::<String>()?)
+                //     .map_err(|e| {
+                //         eprintln!("Failed to parse JSON body: {}", e);
+                //         anyhow!("Failed to parse JSON body: {}", e)
+                //     })
+                //     .map(Triggers::from)
+                //     .map(Trigger::from)
+                //     .ok();
 
+                let decoded_body = serde_urlencoded::from_str::<HashMap<String, String>>(&request.body.expect("should have body"))
+                .map_err(|e| {
+                    eprintln!("Failed to decode url-encoded body: {}", e);
+                    anyhow!("Failed to decode url-encoded body: {}", e)
+                })?;
+            
+                let block_action_result = if let Some(json_str) = decoded_body.get("payload") {
+                    serde_json::from_str::<SlackBlockActionBody>(&json_str)
+                        .map_err(|e| {
+                            eprintln!("Failed to parse JSON body: {}", e);
+                            anyhow!("Failed to parse JSON body: {}", e)
+                        })
+                } else {
+                    Err(anyhow!("No 'payload' key found in decoded body"))
+                }.map(Triggers::from)
+                .map(Trigger::from)
+                .ok();
+
+                // let block_action_result = serde_json::from_str::<SlackBlockActionBody>(serde_urlencoded::from_str(&request.body.expect("should have body")).expect("should have a valid string body"))
+                //     .map_err(|e| {
+                //         eprintln!("Failed to parse JSON body: {}", e);
+                //         anyhow!("Failed to parse JSON body: {}", e)
+                //     })
+                //     .map(Triggers::from)
+                //     .map(Trigger::from)
+                //     .ok();
 
                 slash_command_result.or(block_action_result).ok_or_else(|| anyhow!("Failed to parse Slack command"))
             },

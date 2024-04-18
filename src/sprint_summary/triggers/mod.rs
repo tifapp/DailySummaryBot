@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::{tracing::{error, info}, utils::http::HttpRequest};
 use anyhow::{anyhow, Error, Result};
 
-use self::slack_input::{SlackBlockActionBody, SlackSlashCommandBody};
+use self::slack_input::{SlackBlockActionPayload, SlackSlashCommandBody};
 
 #[derive(Debug, Deserialize)]
 pub struct Trigger {
@@ -26,9 +26,9 @@ impl From<Triggers> for Trigger {
                 text: body.text,
             },
             Triggers::BlockAction(body) => Trigger {
-                channel_id: body.payload.channel.id,
-                command: body.payload.actions[0].action_id.clone(),
-                text: body.payload.actions[0].value.clone(),
+                channel_id: body.channel.id,
+                command: body.actions[0].action_id.clone(),
+                text: body.actions[0].value.clone(),
             },
         }
     }
@@ -36,7 +36,7 @@ impl From<Triggers> for Trigger {
 
 enum Triggers {
     SlashCommand(SlackSlashCommandBody),
-    BlockAction(SlackBlockActionBody),
+    BlockAction(SlackBlockActionPayload),
 }
 
 impl From<SlackSlashCommandBody> for Triggers {
@@ -45,8 +45,8 @@ impl From<SlackSlashCommandBody> for Triggers {
     }
 }
 
-impl From<SlackBlockActionBody> for Triggers {
-    fn from(item: SlackBlockActionBody) -> Self {
+impl From<SlackBlockActionPayload> for Triggers {
+    fn from(item: SlackBlockActionPayload) -> Self {
         Triggers::BlockAction(item)
     }
 }
@@ -69,8 +69,8 @@ impl ConvertToTrigger for LambdaEvent<Value> {
                     .map(Trigger::from)
                     .ok();
             
-                //make a From impl from request to SlackBlockActionBody
-                // let block_action_result = serde_json::from_str::<SlackBlockActionBody>(&request.parse_request_body::<String>()?)
+                //make a From impl from request to SlackBlockActionPayload
+                // let block_action_result = serde_json::from_str::<SlackBlockActionPayload>(&request.parse_request_body::<String>()?)
                 //     .map_err(|e| {
                 //         eprintln!("Failed to parse JSON body: {}", e);
                 //         anyhow!("Failed to parse JSON body: {}", e)
@@ -86,7 +86,7 @@ impl ConvertToTrigger for LambdaEvent<Value> {
                 })?;
             
                 let block_action_result = if let Some(json_str) = decoded_body.get("payload") {
-                    serde_json::from_str::<SlackBlockActionBody>(&json_str)
+                    serde_json::from_str::<SlackBlockActionPayload>(&json_str)
                         .map_err(|e| {
                             eprintln!("Failed to parse JSON body: {}", e);
                             anyhow!("Failed to parse JSON body: {}", e)
@@ -97,7 +97,7 @@ impl ConvertToTrigger for LambdaEvent<Value> {
                 .map(Trigger::from)
                 .ok();
 
-                // let block_action_result = serde_json::from_str::<SlackBlockActionBody>(serde_urlencoded::from_str(&request.body.expect("should have body")).expect("should have a valid string body"))
+                // let block_action_result = serde_json::from_str::<SlackBlockActionPayload>(serde_urlencoded::from_str(&request.body.expect("should have body")).expect("should have a valid string body"))
                 //     .map_err(|e| {
                 //         eprintln!("Failed to parse JSON body: {}", e);
                 //         anyhow!("Failed to parse JSON body: {}", e)

@@ -41,8 +41,3 @@ pub struct SlackBlockActionPayload {
     pub actions: Vec<SlackBlockAction>,
     pub channel: SlackBlockActionChannel
 }
-
-#[derive(Debug, Deserialize)]
-pub struct SlackBlockActionBody {
-    pub payload: SlackBlockActionPayload,
-}

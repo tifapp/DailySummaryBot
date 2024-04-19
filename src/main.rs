@@ -1,13 +1,14 @@
-mod slack_output;
 mod sprint_summary;
 mod utils;
 
 use lambda_runtime::{run, service_fn, tracing, Error, LambdaEvent};
 use anyhow::Result;
+use reqwest::Client;
 use serde_json::{json, Value};
-use crate::sprint_summary::create_sprint_message;
 use tracing::{error, info};
-use tokio::time::{sleep, Duration};
+use crate::sprint_summary::SprintEventMessageGenerator;
+use crate::sprint_summary::{events::SprintEventParser, SprintEvent};
+use crate::utils::slack_output::TeamCommunicationClient;
 
 async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     info!("Input is: {:?}", event);
@@ -15,12 +16,13 @@ async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     let response_url = event.payload["response_url"].as_str().unwrap_or_default().to_string();
     info!("response_url is: {:?}", response_url);
     tokio::spawn(async move {
-        sleep(Duration::from_secs(5)).await;
-
-        match create_sprint_message(event).await {
+        let sprint_event: SprintEvent = event.try_into_sprint_event().await.expect("should convert lambda event to sprint event");
+        let fetch_client = Client::new();
+        match fetch_client.send_teams_message(&sprint_event.sprint_context.channel_id, &sprint_event.create_sprint_event_message().await.expect("efjsio")).await {
             Ok(()) => info!("Processed command successfully"),
             Err(e) => error!("Error processing command: {:?}", e),
         }
+       // send_message_to_slack(&trigger.channel_id, &message_blocks).await.context("Failed to send message to Slack") //move this out
     });
 
     //perform some basic input validation and have different responses for different inputs

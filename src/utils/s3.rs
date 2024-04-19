@@ -159,6 +159,10 @@ pub struct HistoricalRecords {
 
 impl HistoricalRecords {
     pub fn into_slack_blocks(&self) -> Vec<Value> {
+        if self.history.is_empty() {
+            return vec![]
+        }
+
         let mut blocks: Vec<serde_json::Value> = vec![section_block("\n\n*Previous Sprints:*")];
 
         blocks.extend(self.history.iter().map(|record| {

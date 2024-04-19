@@ -38,6 +38,7 @@ pub struct TicketDetails {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Ticket {
+    //pub added_in_sprint: String,
     pub added_on: String,
     pub last_moved_on: String,
     pub members: Vec<String>,

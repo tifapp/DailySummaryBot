@@ -118,19 +118,19 @@ impl TicketSummary {
     }
 }
 
-impl From<TicketSummary> for TicketRecords {
-    fn from(summary: TicketSummary) -> Self {
+impl From<&TicketSummary> for TicketRecords {
+    fn from(summary: &TicketSummary) -> Self {
         let mut tickets = VecDeque::new();
 
-        let mut extend_tickets = |vec: VecDeque<Ticket>| {
-            tickets.extend(vec.iter().map(TicketRecord::from));
+        let mut extend_tickets = |vec: &VecDeque<Ticket>| {
+            tickets.extend(vec.iter().map(|ticket| TicketRecord::from(ticket)));
         };
 
-        extend_tickets(summary.blocked_prs);
-        extend_tickets(summary.open_prs);
-        extend_tickets(summary.open_tickets);
-        extend_tickets(summary.completed_tickets);
-        extend_tickets(summary.backlogged_tickets);
+        extend_tickets(&summary.blocked_prs);
+        extend_tickets(&summary.open_prs);
+        extend_tickets(&summary.open_tickets);
+        extend_tickets(&summary.completed_tickets);
+        extend_tickets(&summary.backlogged_tickets);
 
         TicketRecords { tickets }
     }

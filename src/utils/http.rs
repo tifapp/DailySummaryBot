@@ -12,51 +12,44 @@ pub struct HttpRequest {
     pub headers: Option<HashMap<String, String>>,
 }
 
-impl From<LambdaEvent<Value>> for HttpRequest {
-    fn from(event: LambdaEvent<Value>) -> Self {
+impl TryFrom<LambdaEvent<Value>> for HttpRequest {
+    type Error = anyhow::Error;
+
+    fn try_from(event: LambdaEvent<Value>) -> Result<Self> {
         let (value, _context) = event.into_parts();
 
         info!("Event value is {}", value);
 
         let http_method = value
-            .get("requestContext")  
+            .get("requestContext")
             .and_then(|rc| rc.get("http"))
             .and_then(|http| http.get("method"))
             .and_then(Value::as_str)
-            .map(String::from);
-        
+            .map(String::from)
+            .ok_or_else(|| anyhow!("Failed to extract HTTP method from event"));
+
         let body = if value.get("isBase64Encoded").and_then(Value::as_bool) == Some(true) {
             value.get("body")
                 .and_then(Value::as_str)
                 .map(|b| STANDARD.decode(b).ok())
                 .flatten()
                 .and_then(|bytes| String::from_utf8(bytes).ok())
+                .ok_or_else(|| anyhow!("Failed to decode Base64 body"))
         } else {
-            value.get("body").and_then(Value::as_str).map(String::from)
+            value.get("body")
+                .and_then(Value::as_str)
+                .map(String::from)
+                .ok_or_else(|| anyhow!("Failed to extract body from event"))
         };
 
         let headers = value.get("headers")
-            .and_then(|v| serde_json::from_value(v.clone()).ok());
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .ok_or_else(|| anyhow!("Failed to parse headers"));
 
-        HttpRequest {
-            http_method,
-            body,
-            headers,
-        }
-    }
-}
-
-impl HttpRequest {
-    pub fn parse_request_body<T: DeserializeOwned>(&self) -> Result<T> {
-        match &self.body {
-            Some(body_str) => {
-                serde_urlencoded::from_str(&body_str)
-                    .map_err(|e| {
-                        eprintln!("Failed to parse url-encoded body: {}", e);
-                        anyhow!("Failed to parse url-encoded body: {}", e)
-                    })
-            },
-            None => Err(anyhow!("No body to parse"))
-        }
+        Ok(HttpRequest {
+            http_method: http_method.ok(),
+            body: body.ok(),
+            headers: headers.ok(),
+        })
     }
 }

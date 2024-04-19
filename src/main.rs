@@ -7,27 +7,29 @@ use anyhow::Result;
 use serde_json::{json, Value};
 use crate::sprint_summary::create_sprint_message;
 use tracing::{error, info};
+use tokio::time::{sleep, Duration};
 
-async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {    
+async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     info!("Input is: {:?}", event);
 
-    match create_sprint_message(event).await {
-        Ok(()) => {
-            Ok(json!({
-                "statusCode": 200,
-                "headers": { "Content-Type": "text/html" },
-                "body": "success"
-            }))
-        },
-        Err(e) => {
-            error!("Error processing command: {:?}", e);
+    let response_url = event.payload["response_url"].as_str().unwrap_or_default().to_string();
+    info!("response_url is: {:?}", response_url);
+    tokio::spawn(async move {
+        sleep(Duration::from_secs(5)).await;
 
-            Ok(json!({
-                "statusCode": 400,
-                "body": format!("Error processing command: {}", e)
-            }))
+        match create_sprint_message(event).await {
+            Ok(()) => info!("Processed command successfully"),
+            Err(e) => error!("Error processing command: {:?}", e),
         }
-    }
+    });
+
+    //perform some basic input validation and have different responses for different inputs
+    //ex. sprint 18 is ongoing
+    Ok(json!({
+        "statusCode": 200,
+        "headers": { "Content-Type": "text/html" },
+        "body": "Command received, processing..."
+    }))
 }
 
 #[tokio::main]

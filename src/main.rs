@@ -30,6 +30,7 @@ async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
                 let fetch_client = Client::new();
                 info!("Have fetch client");
                 let sprint_message = &sprint_event.create_sprint_event_message(&fetch_client).await.expect("should generate sprint message");
+                info!("Got sprint message {:?}", sprint_message);
                 match fetch_client.send_teams_message(&sprint_event.sprint_context.channel_id, sprint_message).await {
                     Ok(()) => info!("Processed command successfully"),
                     Err(e) => error!("Error processing command: {:?}", e),

@@ -72,16 +72,15 @@ pub trait SprintEventMessageGenerator {
 impl SprintEventMessageGenerator for SprintEvent {
     async fn create_sprint_event_message(&self, fetch_client: &Client) -> Result<Vec<Value>> {
         info!("Going to start making sprint message");
-        let s3_client = create_json_storage_client().await;
+        let json_storage_client = create_json_storage_client().await;
         info!("Made json sprint client");
         
-        let previous_ticket_data = s3_client.get_ticket_data().await?.unwrap_or_else(|| TicketRecords {
+        let previous_ticket_data = json_storage_client.get_ticket_data().await?.unwrap_or_else(|| TicketRecords {
             tickets: VecDeque::new(),
         });
-        
         info!("Have previous ticket data");
         
-        let user_mapping = s3_client.get_sprint_members().await?; 
+        let user_mapping = json_storage_client.get_sprint_members().await?; 
         info!("Have user mapping");
 
         let ticket_summary = fetch_client.fetch_ticket_summary(previous_ticket_data, user_mapping).await?;
@@ -99,7 +98,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 ];
                 message_blocks.extend(ticket_summary.into_slack_blocks());
                 message_blocks.extend(
-                    s3_client.get_historical_data().await?.unwrap_or_else(|| HistoricalRecords {
+                    json_storage_client.get_historical_data().await?.unwrap_or_else(|| HistoricalRecords {
                         history: Vec::new(),
                     })
                     .into_slack_blocks()
@@ -109,8 +108,8 @@ impl SprintEventMessageGenerator for SprintEvent {
                 Ok(message_blocks)
             },
             "/sprint-kickoff-confirm" => {
-                s3_client.put_ticket_data(&(&ticket_summary).into()).await?;
-                s3_client.put_sprint_data(&SprintRecord {
+                json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
+                json_storage_client.put_sprint_data(&SprintRecord {
                     end_date: self.sprint_context.end_date.clone(),
                     name: self.sprint_context.name.clone(),
                     channel_id: self.sprint_context.channel_id.to_string(),
@@ -129,7 +128,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 Ok(message_blocks)
             },
             "/sprint-check-in" => {
-                s3_client.put_ticket_data(&(&ticket_summary).into()).await?;
+                json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
 
                 let mut message_blocks = vec![
                     header_block(&format!("{} Sprint {} Check-In: {}", self.sprint_context.time_indicator(), self.sprint_context.name, print_current_date())),
@@ -141,7 +140,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 Ok(message_blocks)
             },
             "/daily-trigger" => {
-                s3_client.put_ticket_data(&(&ticket_summary).into()).await?;
+                json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
 
                 let mut message_blocks = vec![
                     header_block(&format!("{} Daily Summary: {}", self.sprint_context.time_indicator(), print_current_date())),
@@ -155,12 +154,12 @@ impl SprintEventMessageGenerator for SprintEvent {
             "/sprint-review" => {
                 let eventbridge_client = create_eventbridge_client().await;
                 eventbridge_client.delete_daily_trigger_rule(&self.sprint_context.name).await?;
-                s3_client.clear_sprint_data().await?;
+                json_storage_client.clear_sprint_data().await?;
                 //from ticket_summary, remove completed tickets, then push back into ticket_data
-                s3_client.put_ticket_data(&(&ticket_summary).into()).await?;
-                //clear_ticket_data(&s3_client).await?; //only clear tickets completed. add snails to tickets that carry over.
+                json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
+                //clear_ticket_data(&json_storage_client).await?; //only clear tickets completed. add snails to tickets that carry over.
 
-                let mut historical_data = s3_client.get_historical_data().await?.unwrap_or_else(|| HistoricalRecords {
+                let mut historical_data = json_storage_client.get_historical_data().await?.unwrap_or_else(|| HistoricalRecords {
                     history: Vec::new(),
                 });
 
@@ -180,7 +179,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                     num_tickets_complete: ticket_summary.completed_tickets.len() as u32,
                 });
                 
-                s3_client.put_historical_data(&historical_data).await?;
+                json_storage_client.put_historical_data(&historical_data).await?;
 
                 Ok(message_blocks)
             },

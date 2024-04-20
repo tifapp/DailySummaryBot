@@ -13,14 +13,14 @@ use super::ticket::Ticket;
 use super::ticket_summary::TicketSummary;
 
 pub trait TicketSummaryClient {
-    async fn fetch_ticket_summary(&self, previous_ticket_data: TicketRecords, user_mapping: Option<HashMap<String, String>>) -> Result<TicketSummary>;
+    async fn fetch_ticket_summary(&self, previous_ticket_data: TicketRecords, user_mapping: HashMap<String, String>) -> Result<TicketSummary>;
 }
 
 //plug previous ticket data into here
 //extract this function out instead of calling it from sprint_summary.rs. That way sprint_summary could be in a separate module?
 //extend reqwest client with our custom functions.
 impl TicketSummaryClient for Client {
-    async fn fetch_ticket_summary(&self, previous_ticket_data: TicketRecords, user_mapping: Option<HashMap<String, String>>) -> Result<TicketSummary> {    
+    async fn fetch_ticket_summary(&self, previous_ticket_data: TicketRecords, user_mapping: HashMap<String, String>) -> Result<TicketSummary> {    
         let current_ticket_details = self.fetch_ticket_details().await?;
         let mut current_ticket_ids: Vec<String> = vec![];
 
@@ -58,9 +58,7 @@ impl TicketSummaryClient for Client {
                     added_on,
                     last_moved_on,
                     members: ticket_details.member_ids.iter()
-                        .filter_map(|id| user_mapping
-                            .as_ref()
-                            .and_then(|map| map.get(id))
+                        .filter_map(|id| user_mapping.get(id)
                             .map(|name| name.to_string()))
                         .collect::<Vec<String>>(),
                     details: ticket_details,

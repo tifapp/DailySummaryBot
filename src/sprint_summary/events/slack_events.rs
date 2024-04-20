@@ -45,7 +45,7 @@ impl From<SlackSlashCommandBody> for SprintEvent {
                 end_date,
                 name,
             },
-            response_url
+            response_url: Some(item.response_url)
         }
     }
 }
@@ -124,7 +124,7 @@ impl From<SlackBlockActionPayload> for SprintEvent {
                 end_date,
                 name,
             },
-            response_url
+            response_url: None
         }
     }
 }

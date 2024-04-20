@@ -12,7 +12,6 @@ use crate::utils::slack_output::TeamCommunicationClient;
 async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     info!("Input is: {:?}", event);
 
-    //check if event is already a sprint event. if it is move on, otherwise try to parse into sprint event and validate
     let sprint_event_result = event.try_into_sprint_event().await;
     match sprint_event_result {
         Ok(sprint_event) => {
@@ -23,8 +22,8 @@ async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
             let sprint_message = &sprint_event.create_sprint_event_message(&fetch_client).await.expect("should generate sprint message");
             info!("Got sprint message {:?}", sprint_message);
             match fetch_client.send_teams_message(&sprint_event.sprint_context.channel_id, sprint_message, sprint_event.response_url).await {
-                Ok(()) => info!("Processed command successfully"),
-                Err(e) => error!("Error processing command: {:?}", e),
+                Ok(()) => Ok(json!("Processed command successfully")),
+                Err(e) => Ok(json!(format!("Error processing command: {:?}", e))),
             }
         },
         Err(e) => {

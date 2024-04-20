@@ -4,7 +4,7 @@ mod ticket_sources;
 mod sprint_records;
 mod events;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::env;
 use anyhow::{Result, anyhow};
 use lambda_runtime::tracing::info;
@@ -76,12 +76,12 @@ impl SprintEventMessageGenerator for SprintEvent {
         let json_storage_client = create_json_storage_client().await;
         info!("Made json sprint client");
         
-        let previous_ticket_data = json_storage_client.get_ticket_data().await?.unwrap_or_else(|| TicketRecords {
+        let previous_ticket_data = json_storage_client.get_ticket_data().await?.unwrap_or(TicketRecords {
             tickets: VecDeque::new(),
         });
         info!("Have previous ticket data");
         
-        let user_mapping = json_storage_client.get_sprint_members().await?; 
+        let user_mapping = json_storage_client.get_sprint_members().await?.unwrap_or(HashMap::new());
         info!("Have user mapping");
 
         let ticket_summary = fetch_client.fetch_ticket_summary(previous_ticket_data, user_mapping).await?;

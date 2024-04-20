@@ -22,7 +22,6 @@ enum SprintEvents {
     SprintKickoff(SprintEvent),
     SprintCheckIn,
     DailySummary,
-    SprintReview,
 }
 
 impl SprintEventParser for SprintEvents {
@@ -42,7 +41,7 @@ impl SprintEventParser for SprintEvents {
                             sprint_context: (&active_sprint_record).into(),
                         })
                     },
-                    SprintEvents::DailySummary | SprintEvents::SprintReview => {
+                    SprintEvents::DailySummary => {
                         let sprint_context: SprintContext = (&active_sprint_record).into();
                         
                         Ok(SprintEvent {

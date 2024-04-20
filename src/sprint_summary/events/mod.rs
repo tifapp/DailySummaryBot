@@ -2,10 +2,9 @@ mod slack_events;
 
 use lambda_runtime::LambdaEvent;
 use serde_json::Value;
-use crate::utils::{http::HttpRequest, s3::{create_s3_client, get_sprint_data, SprintRecord}};
+use crate::utils::{http::HttpRequest, s3::create_json_storage_client};
 use anyhow::{anyhow, Error, Result};
-
-use super::{SprintContext, SprintEvent};
+use super::{sprint_records::{SprintRecord, SprintRecordClient}, SprintContext, SprintEvent, SprintEventParser};
 
 impl From<&SprintRecord> for SprintContext {
     fn from(record: &SprintRecord) -> Self {
@@ -26,14 +25,10 @@ enum SprintEvents {
     SprintReview,
 }
 
-pub trait SprintEventParser {
-    async fn try_into_sprint_event(self) -> Result<SprintEvent>;
-}
-
 impl SprintEventParser for SprintEvents {
     async fn try_into_sprint_event(self) -> Result<SprintEvent> {
-        let s3_client = create_s3_client().await;
-        let sprint_data_result = get_sprint_data(&s3_client).await;
+        let json_client = create_json_storage_client().await;
+        let sprint_data_result = json_client.get_sprint_data().await;
 
         match sprint_data_result {
             Ok(Some(active_sprint_record)) => {

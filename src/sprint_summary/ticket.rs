@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 use crate::utils::date::{days_between, print_current_date};
-use crate::utils::slack_components::{section_block, divider_block, list_block, link_element, text_element, user_element};
-use crate::utils::s3::TicketRecord;
+use crate::utils::slack_components::{link_element, text_element, user_element};
+use super::sprint_records::TicketRecord;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CheckRunDetails {

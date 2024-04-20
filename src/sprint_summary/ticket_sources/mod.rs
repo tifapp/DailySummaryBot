@@ -8,7 +8,7 @@ use reqwest::Client;
 use trello::TicketDetailsClient;
 use github::PullRequestClient;
 use crate::utils::date::print_current_date;
-use crate::utils::s3::TicketRecords;
+use super::sprint_records::TicketRecords;
 use super::ticket::Ticket;
 use super::ticket_summary::TicketSummary;
 

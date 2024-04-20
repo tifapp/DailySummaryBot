@@ -2,7 +2,8 @@ mod ticket;
 mod ticket_summary;
 mod ticket_sources;
 mod validation;
-pub mod events;
+mod sprint_records;
+mod events;
 
 use std::env;
 use anyhow::{Result, anyhow};
@@ -11,8 +12,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use crate::utils::date::{days_between, print_current_date};
 use crate::utils::eventbridge::{create_eventbridge_client, EventBridgeExtensions};
+use crate::utils::s3::create_json_storage_client;
 use crate::utils::slack_components::{context_block, header_block, primary_button_block, section_block};
-use crate::utils::s3::{clear_sprint_data, clear_ticket_data, create_s3_client, get_historical_data, get_sprint_data, get_sprint_members, get_ticket_data, put_historical_data, put_sprint_data, put_ticket_data, HistoricalRecord, HistoricalRecords, SprintRecord};
+use self::sprint_records::{HistoricalRecord, HistoricalRecordClient, HistoricalRecords, SprintMemberClient, SprintRecord, SprintRecordClient, TicketRecordClient};
 use self::ticket_sources::TicketSummaryClient;
 
 #[derive(Debug, Deserialize)]
@@ -27,6 +29,10 @@ pub struct SprintContext {
 pub struct SprintEvent {
     pub sprint_command: String,
     pub sprint_context: SprintContext,
+}
+
+pub trait SprintEventParser {
+    async fn try_into_sprint_event(self) -> Result<SprintEvent>;
 }
 
 impl SprintContext {
@@ -59,16 +65,15 @@ impl SprintContext {
 }
 
 pub trait SprintEventMessageGenerator {
-    async fn create_sprint_event_message(&self) -> Result<Vec<Value>>;
+    async fn create_sprint_event_message(&self, fetch_client: &Client) -> Result<Vec<Value>>;
 }
 
 impl SprintEventMessageGenerator for SprintEvent {
-    async fn create_sprint_event_message(&self) -> Result<Vec<Value>> {
-        let s3_client = create_s3_client().await;
-        let previous_ticket_data = get_ticket_data(&s3_client).await?;
-        let user_mapping = get_sprint_members(&s3_client).await?; 
+    async fn create_sprint_event_message(&self, fetch_client: &Client) -> Result<Vec<Value>> {
+        let s3_client = create_json_storage_client().await;
+        let previous_ticket_data = s3_client.get_ticket_data().await?;
+        let user_mapping = s3_client.get_sprint_members().await?; 
 
-        let fetch_client = Client::new();    
         let ticket_summary = fetch_client.fetch_ticket_summary(previous_ticket_data, user_mapping).await?;
         
         let trello_board_id = env::var("TRELLO_BOARD_ID").expect("TRELLO_BOARD_ID environment variable should exist");
@@ -83,7 +88,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 ];
                 message_blocks.extend(ticket_summary.into_slack_blocks());
                 message_blocks.extend(
-                    get_historical_data(&s3_client).await?.unwrap_or_else(|| HistoricalRecords {
+                    s3_client.get_historical_data().await?.unwrap_or_else(|| HistoricalRecords {
                         history: Vec::new(),
                     })
                     .into_slack_blocks()
@@ -93,8 +98,8 @@ impl SprintEventMessageGenerator for SprintEvent {
                 Ok(message_blocks)
             },
             "/sprint-kickoff-confirm" => {
-                put_ticket_data(&s3_client, &(&ticket_summary).into()).await?;
-                put_sprint_data(&s3_client, &SprintRecord {
+                s3_client.put_ticket_data(&(&ticket_summary).into()).await?;
+                s3_client.put_sprint_data(&SprintRecord {
                     end_date: self.sprint_context.end_date.clone(),
                     name: self.sprint_context.name.clone(),
                     channel_id: self.sprint_context.channel_id.to_string(),
@@ -113,7 +118,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 Ok(message_blocks)
             },
             "/sprint-check-in" => {
-                put_ticket_data(&s3_client, &(&ticket_summary).into()).await?;
+                s3_client.put_ticket_data(&(&ticket_summary).into()).await?;
 
                 let mut message_blocks = vec![
                     header_block(&format!("{} Sprint {} Check-In: {}", self.sprint_context.time_indicator(), self.sprint_context.name, print_current_date())),
@@ -125,7 +130,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 Ok(message_blocks)
             },
             "/daily-trigger" => {
-                put_ticket_data(&s3_client, &(&ticket_summary).into()).await?;
+                s3_client.put_ticket_data(&(&ticket_summary).into()).await?;
 
                 let mut message_blocks = vec![
                     header_block(&format!("{} Daily Summary: {}", self.sprint_context.time_indicator(), print_current_date())),
@@ -139,12 +144,12 @@ impl SprintEventMessageGenerator for SprintEvent {
             "/sprint-review" => {
                 let eventbridge_client = create_eventbridge_client().await;
                 eventbridge_client.delete_daily_trigger_rule(&self.sprint_context.name).await?;
-                clear_sprint_data(&s3_client).await?;
+                s3_client.clear_sprint_data().await?;
                 //from ticket_summary, remove completed tickets, then push back into ticket_data
-                put_ticket_data(&s3_client, &(&ticket_summary).into()).await?;
-                clear_ticket_data(&s3_client).await?; //only clear tickets completed. add snails to tickets that carry over.
+                s3_client.put_ticket_data(&(&ticket_summary).into()).await?;
+                //clear_ticket_data(&s3_client).await?; //only clear tickets completed. add snails to tickets that carry over.
 
-                let mut historical_data = get_historical_data(&s3_client).await?.unwrap_or_else(|| HistoricalRecords {
+                let mut historical_data = s3_client.get_historical_data().await?.unwrap_or_else(|| HistoricalRecords {
                     history: Vec::new(),
                 });
 
@@ -164,7 +169,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                     num_tickets_complete: ticket_summary.completed_tickets.len() as u32,
                 });
                 
-                put_historical_data(&s3_client, &historical_data).await?;
+                s3_client.put_historical_data(&historical_data).await?;
 
                 Ok(message_blocks)
             },

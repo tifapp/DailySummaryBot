@@ -1,7 +1,6 @@
 mod ticket;
 mod ticket_summary;
 mod ticket_sources;
-mod validation;
 mod sprint_records;
 mod events;
 
@@ -72,15 +71,21 @@ pub trait SprintEventMessageGenerator {
 
 impl SprintEventMessageGenerator for SprintEvent {
     async fn create_sprint_event_message(&self, fetch_client: &Client) -> Result<Vec<Value>> {
+        info!("Going to start making sprint message");
         let s3_client = create_json_storage_client().await;
+        info!("Made json sprint client");
         
         let previous_ticket_data = s3_client.get_ticket_data().await?.unwrap_or_else(|| TicketRecords {
             tickets: VecDeque::new(),
         });
         
+        info!("Have previous ticket data");
+        
         let user_mapping = s3_client.get_sprint_members().await?; 
+        info!("Have user mapping");
 
         let ticket_summary = fetch_client.fetch_ticket_summary(previous_ticket_data, user_mapping).await?;
+        info!("Have ticket summary");
         
         let trello_board_id = env::var("TRELLO_BOARD_ID").expect("TRELLO_BOARD_ID environment variable should exist");
         let board_link_block = context_block(&format!("<https://trello.com/b/{}|View sprint board>", trello_board_id));

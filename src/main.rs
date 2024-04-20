@@ -12,36 +12,20 @@ use crate::utils::slack_output::TeamCommunicationClient;
 async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     info!("Input is: {:?}", event);
 
-    let response_url = event.payload["response_url"].as_str().unwrap_or_default().to_string();
-    info!("response_url is: {:?}", response_url);
-
+    //check if event is already a sprint event. if it is move on, otherwise try to parse into sprint event and validate
     let sprint_event_result = event.try_into_sprint_event().await;
     match sprint_event_result {
         Ok(sprint_event) => {
             info!("sprint event is valid: {:?}", sprint_event);
-            let response = format!(
-                "Valid sprint command received: {:?}",
-                sprint_event
-            );
 
-            tokio::spawn(async move {
-                info!("preparing sprint message");
-
-                let fetch_client = Client::new();
-                info!("Have fetch client");
-                let sprint_message = &sprint_event.create_sprint_event_message(&fetch_client).await.expect("should generate sprint message");
-                info!("Got sprint message {:?}", sprint_message);
-                match fetch_client.send_teams_message(&sprint_event.sprint_context.channel_id, sprint_message).await {
-                    Ok(()) => info!("Processed command successfully"),
-                    Err(e) => error!("Error processing command: {:?}", e),
-                }
-            });
-
-            Ok(json!({
-                "statusCode": 200,
-                "headers": { "Content-Type": "text/html" },
-                "body": response
-            }))
+            let fetch_client = Client::new();
+            info!("Have fetch client");
+            let sprint_message = &sprint_event.create_sprint_event_message(&fetch_client).await.expect("should generate sprint message");
+            info!("Got sprint message {:?}", sprint_message);
+            match fetch_client.send_teams_message(&sprint_event.sprint_context.channel_id, sprint_message, sprint_event.response_url).await {
+                Ok(()) => info!("Processed command successfully"),
+                Err(e) => error!("Error processing command: {:?}", e),
+            }
         },
         Err(e) => {
             error!("Error converting lambda event to sprint event: {:?}", e);

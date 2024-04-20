@@ -12,11 +12,11 @@ struct SlackResponse {
 }
 
 pub trait TeamCommunicationClient {
-    async fn send_teams_message<T: Serialize>(&self, channel_id: &str, blocks: &T) -> Result<()>;
+    async fn send_teams_message<T: Serialize>(&self, channel_id: &str, blocks: &T, response_url: Option<String>) -> Result<()>;
 }
 
 impl TeamCommunicationClient for Client {
-    async fn send_teams_message<T: Serialize>(&self, channel_id: &str, blocks: &T) -> Result<()> {
+    async fn send_teams_message<T: Serialize>(&self, channel_id: &str, blocks: &T, response_url: Option<String>) -> Result<()> {
         let slack_token = env::var("SLACK_OAUTH").expect("SLACK_OAUTH environment variable should exist");
         
         let message = json!({
@@ -26,7 +26,7 @@ impl TeamCommunicationClient for Client {
     
         info!("Message to Slack: {}", message);
     
-        let response = self.post("https://slack.com/api/chat.postMessage")
+        let response = self.post(response_url.unwrap_or("https://slack.com/api/chat.postMessage".to_string()))
             .bearer_auth(slack_token)
             .json(&message)
             .send()

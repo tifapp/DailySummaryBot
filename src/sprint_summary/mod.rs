@@ -29,6 +29,7 @@ pub struct SprintContext {
 #[derive(Debug, Deserialize)]
 pub struct SprintEvent {
     pub sprint_command: String,
+    pub response_url: Option<String>,
     pub sprint_context: SprintContext,
 }
 

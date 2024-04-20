@@ -12,7 +12,9 @@ struct SlackSlashCommandBody {
     user_id: String,
     command: String,
     text: String,
-    api_app_id: String
+    api_app_id: String,
+    response_url: String,
+    trigger_id: String,
 }
 
 impl TryFrom<&HttpRequest> for SlackSlashCommandBody {
@@ -43,6 +45,7 @@ impl From<SlackSlashCommandBody> for SprintEvent {
                 end_date,
                 name,
             },
+            response_url
         }
     }
 }
@@ -121,6 +124,7 @@ impl From<SlackBlockActionPayload> for SprintEvent {
                 end_date,
                 name,
             },
+            response_url
         }
     }
 }

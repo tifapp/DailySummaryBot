@@ -37,6 +37,7 @@ impl SprintEventParser for SprintEvents {
                     },
                     SprintEvents::SprintCheckIn => {
                         Ok(SprintEvent {
+                            response_url: None,
                             sprint_command: "/sprint-check-in".to_string(),
                             sprint_context: (&active_sprint_record).into(),
                         })
@@ -45,6 +46,7 @@ impl SprintEventParser for SprintEvents {
                         let sprint_context: SprintContext = (&active_sprint_record).into();
                         
                         Ok(SprintEvent {
+                            response_url: None,
                             sprint_command: if sprint_context.days_until_end() <= 0 {
                                 "/sprint-review".to_string()
                             } else {

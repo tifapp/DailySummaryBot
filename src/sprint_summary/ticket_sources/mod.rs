@@ -8,19 +8,16 @@ use reqwest::Client;
 use trello::TicketDetailsClient;
 use github::PullRequestClient;
 use crate::utils::date::print_current_date;
-use super::sprint_records::TicketRecords;
+use super::sprint_records::{HistoricalRecords, TicketRecords};
 use super::ticket::Ticket;
 use super::ticket_summary::TicketSummary;
 
 pub trait TicketSummaryClient {
-    async fn fetch_ticket_summary(&self, previous_ticket_data: TicketRecords, user_mapping: HashMap<String, String>) -> Result<TicketSummary>;
+    async fn fetch_ticket_summary(&self, current_sprint_name: &str, historical_records: &HistoricalRecords, previous_ticket_data: TicketRecords, user_mapping: HashMap<String, String>) -> Result<TicketSummary>;
 }
 
-//plug previous ticket data into here
-//extract this function out instead of calling it from sprint_summary.rs. That way sprint_summary could be in a separate module?
-//extend reqwest client with our custom functions.
 impl TicketSummaryClient for Client {
-    async fn fetch_ticket_summary(&self, previous_ticket_data: TicketRecords, user_mapping: HashMap<String, String>) -> Result<TicketSummary> {    
+    async fn fetch_ticket_summary(&self, current_sprint_name: &str, historical_records: &HistoricalRecords, previous_ticket_data: TicketRecords, user_mapping: HashMap<String, String>) -> Result<TicketSummary> {    
         let current_ticket_details = self.fetch_ticket_details().await?;
         let mut current_ticket_ids: Vec<String> = vec![];
 
@@ -41,7 +38,15 @@ impl TicketSummaryClient for Client {
         
                 let added_on = previous_version
                     .map(|record| record.added_on.clone())
-                    .unwrap_or_else(|| print_current_date());
+                    .unwrap_or(print_current_date());
+                
+                let added_in_sprint = previous_version
+                    .map(|record| record.added_in_sprint.clone())
+                    .unwrap_or(current_sprint_name.to_string());
+                
+                let sprint_age = previous_version
+                    .map(|record| historical_records.count_sprints_since(&record.added_in_sprint))
+                    .unwrap_or(0);
         
                 let last_moved_on = if let Some(previous) = &previous_version {
                     if previous.list_name != ticket_details.list_name {
@@ -55,7 +60,9 @@ impl TicketSummaryClient for Client {
         
                 result_tickets.push(Ticket {
                     pr,
+                    sprint_age,
                     added_on,
+                    added_in_sprint,
                     last_moved_on,
                     members: ticket_details.member_ids.iter()
                         .filter_map(|id| user_mapping.get(id)

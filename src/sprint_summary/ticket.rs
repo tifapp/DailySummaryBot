@@ -20,7 +20,6 @@ pub struct PullRequest {
     pub failing_check_runs: Vec<CheckRunDetails>,
 }
 
-//generic inteface to work with any ticket tracking system
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TicketDetails {
     pub id: String,
@@ -38,7 +37,8 @@ pub struct TicketDetails {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Ticket {
-    //pub added_in_sprint: String,
+    pub sprint_age: usize,
+    pub added_in_sprint: String,
     pub added_on: String,
     pub last_moved_on: String,
     pub members: Vec<String>,
@@ -47,31 +47,31 @@ pub struct Ticket {
     pub is_backlogged: bool,
 }
 
-//plug previous ticket data into here
-//extract this function out instead of calling it from sprint_summary.rs. That way sprint_summary could be in a separate module?
-//extend reqwest client with our custom functions.
-
 impl Ticket {
+    fn display_sprint_age(&self) -> String {
+        std::iter::repeat("🐌").take(self.sprint_age).collect::<String>()
+    }
+
     pub fn into_slack_blocks(&self) -> serde_json::Value {
         let mut ticket_name = self.details.name.clone();
         
         if let Ok(days) = days_between(Some(&self.added_on), &print_current_date()) {
-            if days <= 2 {
+            if days <= 3 {
                 ticket_name = format!("🆕 {}", ticket_name);
             }
         }
         
-        if let Ok(days) = days_between(Some(&self.last_moved_on), &print_current_date()) {
-            if days > 7 {
-                ticket_name = format!("🐌 {}", ticket_name);
-            }
+        if self.sprint_age > 0 {
+            ticket_name = format!("{} {}", self.display_sprint_age(), ticket_name);
         }
 
         let mut ticket_elements = vec![link_element(&self.details.url, &ticket_name, Some(json!({"bold": true, "strike": self.is_backlogged})))];
 
-        //make sure all repos are covered
-        let needs_attention = self.details.list_name != "Investigation/Discussion" && (!self.details.has_description || !self.details.has_labels);
-        //add warning if in QA but no PR
+        
+        let needs_attention = (self.details.list_name != "Investigation/Discussion" && (!self.details.has_description || !self.details.has_labels))
+        || (self.details.list_name == "In Progress" && self.members.is_empty())
+        || (self.details.list_name == "QA/Bug Testing" && self.pr.is_none());
+        
         if needs_attention {
             ticket_elements.push(text_element("\n", None));
             ticket_elements.push(text_element("⚠️", None));
@@ -80,6 +80,12 @@ impl Ticket {
             }
             if !self.details.has_labels {
                 ticket_elements.push(text_element(" | Missing Labels", Some(json!({"bold": true}))));
+            }
+            if self.members.is_empty() {
+                ticket_elements.push(text_element(" | Missing Assignees", Some(json!({"bold": true}))));
+            }
+            if self.pr.is_none() {
+                ticket_elements.push(text_element(" | Missing PR", Some(json!({"bold": true}))));
             }
         }
 
@@ -139,6 +145,7 @@ impl From<&Ticket> for TicketRecord {
             list_name: ticket.details.list_name.clone(),
             is_goal: ticket.details.is_goal,
             added_on: ticket.added_on.clone(),
+            added_in_sprint: ticket.added_in_sprint.clone(),
             last_moved_on: ticket.last_moved_on.clone(),
         }
     }
@@ -149,6 +156,8 @@ impl From<&TicketRecord> for Ticket {
         Ticket {
             members: vec![],
             pr: None,
+            sprint_age: 0,
+            added_in_sprint: record.added_in_sprint.clone(),
             added_on: record.added_on.clone(),
             last_moved_on: record.last_moved_on.clone(),  
             is_backlogged: true,

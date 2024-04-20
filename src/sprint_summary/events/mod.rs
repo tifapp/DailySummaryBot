@@ -4,7 +4,7 @@ use lambda_runtime::LambdaEvent;
 use serde_json::Value;
 use crate::utils::{http::HttpRequest, s3::create_json_storage_client};
 use anyhow::{anyhow, Error, Result};
-use super::{sprint_records::{SprintRecord, SprintRecordClient}, SprintContext, SprintEvent, SprintEventParser};
+use super::{sprint_records::{HistoricalRecordClient, HistoricalRecords, SprintRecord, SprintRecordClient}, SprintContext, SprintEvent, SprintEventParser};
 
 impl From<&SprintRecord> for SprintContext {
     fn from(record: &SprintRecord) -> Self {
@@ -27,9 +27,8 @@ enum SprintEvents {
 impl SprintEventParser for SprintEvents {
     async fn try_into_sprint_event(self) -> Result<SprintEvent> {
         let json_client = create_json_storage_client().await;
-        let sprint_data_result = json_client.get_sprint_data().await;
 
-        match sprint_data_result {
+        match json_client.get_sprint_data().await {
             Ok(Some(active_sprint_record)) => {
                 match self {
                     SprintEvents::SprintPreview(_) | SprintEvents::SprintKickoff(_) => {
@@ -60,6 +59,14 @@ impl SprintEventParser for SprintEvents {
             Ok(None) => {
                 match self {
                     SprintEvents::SprintPreview(sprint_event) | SprintEvents::SprintKickoff(sprint_event) => {
+                        let history = json_client.get_historical_data().await?.unwrap_or(HistoricalRecords {
+                            history: Vec::new(),
+                        });
+
+                        if history.was_sprint_name_used(&sprint_event.sprint_context.name) {
+                            return Err(anyhow!("Sprint name {} was already used", sprint_event.sprint_context.name));
+                        }
+
                         Ok(sprint_event)
                     },
                     _ => Err(anyhow!("No active sprint data available for this operation")),

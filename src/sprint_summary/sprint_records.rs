@@ -67,6 +67,7 @@ pub struct TicketRecord {
     pub list_name: String,
     pub is_goal: bool,
     pub added_on: String,
+    pub added_in_sprint: String,
     pub last_moved_on: String,
 }
 
@@ -131,6 +132,19 @@ impl HistoricalRecords {
         }));
 
         blocks
+    }
+
+    pub fn count_sprints_since(&self, sprint_name: &str) -> usize {
+        self.history
+            .iter()
+            .rev()
+            .position(|item| item.name == sprint_name)
+            .map(|index| index + 1)
+            .unwrap_or(0)
+    }
+
+    pub fn was_sprint_name_used(&self, sprint_name: &str) -> bool {
+        self.count_sprints_since(sprint_name) > 0
     }
 }
 

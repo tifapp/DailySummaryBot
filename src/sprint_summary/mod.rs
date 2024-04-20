@@ -83,8 +83,12 @@ impl SprintEventMessageGenerator for SprintEvent {
         
         let user_mapping = json_storage_client.get_sprint_members().await?.unwrap_or(HashMap::new());
         info!("Have user mapping");
+        
+        let mut historical_data = json_storage_client.get_historical_data().await?.unwrap_or(HistoricalRecords {
+            history: Vec::new(),
+        });
 
-        let ticket_summary = fetch_client.fetch_ticket_summary(previous_ticket_data, user_mapping).await?;
+        let ticket_summary = fetch_client.fetch_ticket_summary(&self.sprint_context.name, &historical_data, previous_ticket_data, user_mapping).await?;
         info!("Have ticket summary");
         
         let trello_board_id = env::var("TRELLO_BOARD_ID").expect("TRELLO_BOARD_ID environment variable should exist");
@@ -92,7 +96,6 @@ impl SprintEventMessageGenerator for SprintEvent {
         
         match self.sprint_command.as_str() {
             "/sprint-kickoff" => {
-                //try using a modal for the preview rather than a persistent message
                 let mut message_blocks = vec![
                     header_block(&format!("🔭 Sprint {} Preview: {} - {}", self.sprint_context.name, print_current_date(), self.sprint_context.end_date)),
                     section_block(&format!("*{} Tickets*\n*{:?} Days*", ticket_summary.open_ticket_count, days_between(Some(&print_current_date()), &self.sprint_context.end_date)?))
@@ -156,13 +159,6 @@ impl SprintEventMessageGenerator for SprintEvent {
                 let eventbridge_client = create_eventbridge_client().await;
                 eventbridge_client.delete_daily_trigger_rule(&self.sprint_context.name).await?;
                 json_storage_client.clear_sprint_data().await?;
-                //from ticket_summary, remove completed tickets, then push back into ticket_data
-                json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
-                //clear_ticket_data(&json_storage_client).await?; //only clear tickets completed. add snails to tickets that carry over.
-
-                let mut historical_data = json_storage_client.get_historical_data().await?.unwrap_or_else(|| HistoricalRecords {
-                    history: Vec::new(),
-                });
 
                 let mut message_blocks = vec![
                     header_block(&format!("🎆 Sprint {} Review: {} - {}", self.sprint_context.name, print_current_date(), self.sprint_context.end_date)),
@@ -171,6 +167,10 @@ impl SprintEventMessageGenerator for SprintEvent {
                 ];
                 message_blocks.extend(historical_data.into_slack_blocks());
                 message_blocks.push(board_link_block);
+                
+                //from ticket_summary, remove completed tickets, then push back into ticket_data
+                json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
+                //clear_ticket_data(&json_storage_client).await?; //only clear tickets completed. add snails to tickets that carry over.
 
                 historical_data.history.push(HistoricalRecord {
                     name: self.sprint_context.name.clone(),

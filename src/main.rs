@@ -6,7 +6,7 @@ use anyhow::Result;
 use reqwest::Client;
 use serde_json::{json, Value};
 use tracing::{error, info};
-use crate::sprint_summary::{SprintEvent, SprintEventMessageGenerator, SprintEventParser};
+use crate::sprint_summary::{SprintEventMessageGenerator, SprintEventParser};
 use crate::utils::slack_output::TeamCommunicationClient;
 
 async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
@@ -18,7 +18,15 @@ async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     let sprint_event_result = event.try_into_sprint_event().await;
     match sprint_event_result {
         Ok(sprint_event) => {
+            info!("sprint event is valid: {:?}", sprint_event);
+            let response = format!(
+                "Valid sprint command received: {:?}",
+                sprint_event
+            );
+
             tokio::spawn(async move {
+                info!("preparing sprint message");
+
                 let fetch_client = Client::new();
                 let sprint_message = &sprint_event.create_sprint_event_message(&fetch_client).await.expect("should generate sprint message");
                 match fetch_client.send_teams_message(&sprint_event.sprint_context.channel_id, sprint_message).await {
@@ -30,7 +38,7 @@ async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
             Ok(json!({
                 "statusCode": 200,
                 "headers": { "Content-Type": "text/html" },
-                "body": "Command received, processing..."
+                "body": response
             }))
         },
         Err(e) => {

@@ -14,23 +14,34 @@ async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
 
     let response_url = event.payload["response_url"].as_str().unwrap_or_default().to_string();
     info!("response_url is: {:?}", response_url);
-    tokio::spawn(async move {
-        let sprint_event: SprintEvent = event.try_into_sprint_event().await.expect("should convert lambda event to sprint event");
-        let fetch_client = Client::new();
-        let sprint_message = &sprint_event.create_sprint_event_message(&fetch_client).await.expect("should generate sprint message");
-        match fetch_client.send_teams_message(&sprint_event.sprint_context.channel_id, sprint_message).await {
-            Ok(()) => info!("Processed command successfully"),
-            Err(e) => error!("Error processing command: {:?}", e),
-        }
-    });
 
-    //perform some basic input validation and have different responses for different inputs
-    //ex. sprint 18 is ongoing
-    Ok(json!({
-        "statusCode": 200,
-        "headers": { "Content-Type": "text/html" },
-        "body": "Command received, processing..."
-    }))
+    let sprint_event_result = event.try_into_sprint_event().await;
+    match sprint_event_result {
+        Ok(sprint_event) => {
+            tokio::spawn(async move {
+                let fetch_client = Client::new();
+                let sprint_message = &sprint_event.create_sprint_event_message(&fetch_client).await.expect("should generate sprint message");
+                match fetch_client.send_teams_message(&sprint_event.sprint_context.channel_id, sprint_message).await {
+                    Ok(()) => info!("Processed command successfully"),
+                    Err(e) => error!("Error processing command: {:?}", e),
+                }
+            });
+
+            Ok(json!({
+                "statusCode": 200,
+                "headers": { "Content-Type": "text/html" },
+                "body": "Command received, processing..."
+            }))
+        },
+        Err(e) => {
+            error!("Error converting lambda event to sprint event: {:?}", e);
+            Ok(json!({
+                "statusCode": 400,
+                "headers": { "Content-Type": "text/html" },
+                "body": format!("Error: Failed to convert event to sprint event: {}", e)
+            }))
+        }
+    }
 }
 
 #[tokio::main]

@@ -13,14 +13,14 @@ use super::ticket::Ticket;
 use super::ticket_summary::TicketSummary;
 
 pub trait TicketSummaryClient {
-    async fn fetch_ticket_summary(&self, previous_ticket_data: Option<TicketRecords>, user_mapping: Option<HashMap<String, String>>) -> Result<TicketSummary>;
+    async fn fetch_ticket_summary(&self, previous_ticket_data: TicketRecords, user_mapping: Option<HashMap<String, String>>) -> Result<TicketSummary>;
 }
 
 //plug previous ticket data into here
 //extract this function out instead of calling it from sprint_summary.rs. That way sprint_summary could be in a separate module?
 //extend reqwest client with our custom functions.
 impl TicketSummaryClient for Client {
-    async fn fetch_ticket_summary(&self, previous_ticket_data: Option<TicketRecords>, user_mapping: Option<HashMap<String, String>>) -> Result<TicketSummary> {    
+    async fn fetch_ticket_summary(&self, previous_ticket_data: TicketRecords, user_mapping: Option<HashMap<String, String>>) -> Result<TicketSummary> {    
         let current_ticket_details = self.fetch_ticket_details().await?;
         let mut current_ticket_ids: Vec<String> = vec![];
 
@@ -30,12 +30,8 @@ impl TicketSummaryClient for Client {
             for ticket_details in current_ticket_details {
                 current_ticket_ids.push(ticket_details.id.clone());
         
-                let previous_version = previous_ticket_data.as_ref()
-                    .as_ref()
-                    .map_or(None, |ticket_records| {
-                        ticket_records.tickets.iter()
-                            .find(|record| record.id == ticket_details.id)
-                    });
+                let previous_version = previous_ticket_data.tickets.iter()
+                    .find(|record| record.id == ticket_details.id);
         
                 let pr = if let Some(url) = &ticket_details.pr_url {
                     Some(self.fetch_pr_details(url).await.expect("Should get GitHub PR details successfully"))
@@ -72,14 +68,10 @@ impl TicketSummaryClient for Client {
                 });
             }
             
-            let orphaned_tickets: Vec<Ticket> = previous_ticket_data
-                .as_ref()
-                .map_or_else(Vec::new, |ticket_records| {
-                    ticket_records.tickets.iter()
-                        .filter(|record| !current_ticket_ids.contains(&record.id))
-                        .map(|record| Ticket::from(record))
-                        .collect()
-                });
+            let orphaned_tickets: Vec<Ticket> = previous_ticket_data.tickets.iter()
+                    .filter(|record| !current_ticket_ids.contains(&record.id))
+                    .map(|record| Ticket::from(record))
+                    .collect();
 
             result_tickets.extend(orphaned_tickets);
         

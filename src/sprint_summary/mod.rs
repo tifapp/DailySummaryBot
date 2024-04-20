@@ -5,8 +5,10 @@ mod validation;
 mod sprint_records;
 mod events;
 
+use std::collections::VecDeque;
 use std::env;
 use anyhow::{Result, anyhow};
+use lambda_runtime::tracing::info;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
@@ -14,7 +16,7 @@ use crate::utils::date::{days_between, print_current_date};
 use crate::utils::eventbridge::{create_eventbridge_client, EventBridgeExtensions};
 use crate::utils::s3::create_json_storage_client;
 use crate::utils::slack_components::{context_block, header_block, primary_button_block, section_block};
-use self::sprint_records::{HistoricalRecord, HistoricalRecordClient, HistoricalRecords, SprintMemberClient, SprintRecord, SprintRecordClient, TicketRecordClient};
+use self::sprint_records::{HistoricalRecord, HistoricalRecordClient, HistoricalRecords, SprintMemberClient, SprintRecord, SprintRecordClient, TicketRecordClient, TicketRecords};
 use self::ticket_sources::TicketSummaryClient;
 
 #[derive(Debug, Deserialize)]
@@ -71,7 +73,11 @@ pub trait SprintEventMessageGenerator {
 impl SprintEventMessageGenerator for SprintEvent {
     async fn create_sprint_event_message(&self, fetch_client: &Client) -> Result<Vec<Value>> {
         let s3_client = create_json_storage_client().await;
-        let previous_ticket_data = s3_client.get_ticket_data().await?;
+        
+        let previous_ticket_data = s3_client.get_ticket_data().await?.unwrap_or_else(|| TicketRecords {
+            tickets: VecDeque::new(),
+        });
+        
         let user_mapping = s3_client.get_sprint_members().await?; 
 
         let ticket_summary = fetch_client.fetch_ticket_summary(previous_ticket_data, user_mapping).await?;

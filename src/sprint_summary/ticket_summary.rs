@@ -28,6 +28,7 @@ pub struct TicketSummary {
     pub completed_tickets: VecDeque<Ticket>,
     pub ticket_count: u32,
     pub open_ticket_count: u32,
+    pub in_scope_ticket_count: u32,
     pub completed_percentage: f64,
 }
 
@@ -40,18 +41,20 @@ impl From<Vec<Ticket>> for TicketSummary {
         let mut backlogged_tickets = VecDeque::new();
 
         let filtered_tickets: Vec<Ticket> = tickets.into_iter()
-            .filter(|ticket| ticket.details.list_name != "Objectives" && ticket.details.list_name != "To Do" && ticket.details.list_name != "Backlog")
+            .filter(|ticket| ticket.details.list_name != "Objectives" && ticket.details.list_name != "Backlog/Ideas")
             .collect();
 
         let ticket_count = filtered_tickets.len() as u32;
         let mut open_ticket_count = 0;
-
+        let mut in_scope_ticket_count = 0;
         
         for ticket in filtered_tickets {
             if ticket.is_backlogged {
                 backlogged_tickets.prioritized_push(ticket);
             } else if ticket.details.list_name == "Done" {
                 completed_tickets.prioritized_push(ticket);
+            } else if ticket.details.list_name == "In Scope" {
+                in_scope_ticket_count += 1;
             } else {
                 open_ticket_count += 1;
                 match &ticket.pr {
@@ -76,6 +79,7 @@ impl From<Vec<Ticket>> for TicketSummary {
             completed_tickets,
             backlogged_tickets,
             ticket_count,
+            in_scope_ticket_count,
             open_ticket_count,
         }
     }
@@ -112,6 +116,7 @@ impl TicketSummary {
         }
 
         blocks.push(divider_block());
+        blocks.push(section_block(&format!("{} Tickets Left In Scope", self.in_scope_ticket_count)));
 
         blocks
     }

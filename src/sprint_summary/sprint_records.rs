@@ -22,6 +22,7 @@ impl<T> SprintMemberClient for T where T: JsonStorageClient, {
     }
 }
 
+//Sprint record is updated at the beginning of each sprint
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SprintRecord {
     pub name: String,
@@ -29,6 +30,8 @@ pub struct SprintRecord {
     pub end_date: String,
     pub channel_id: String,
     pub trello_board: String,
+    pub open_tickets_count_beginning: u32,
+    pub in_scope_tickets_count_beginning: u32,
 }
 
 pub trait SprintRecordClient {
@@ -71,9 +74,10 @@ pub struct TicketRecord {
     pub last_moved_on: String,
 }
 
+//Ticket records update daily
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TicketRecords {
-    pub tickets: VecDeque<TicketRecord>
+    pub tickets: VecDeque<TicketRecord>,
 }
 
 pub trait TicketRecordClient {
@@ -105,7 +109,9 @@ pub struct HistoricalRecord {
     pub start_date: String,
     pub end_date: String,
     pub percent_complete: f64,
-    pub num_tickets_complete: u32,
+    pub completed_tickets_count: u32,
+    pub tickets_added_to_scope_count: u32,
+    pub open_tickets_added_count: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -126,7 +132,7 @@ impl HistoricalRecords {
                 "{} - {}: *{} tickets | {:.2}%*",
                 record.start_date,
                 record.end_date,
-                record.num_tickets_complete,
+                record.completed_tickets_count,
                 record.percent_complete
             ))
         }));
@@ -148,6 +154,7 @@ impl HistoricalRecords {
     }
 }
 
+//Historical record is updated at the end of each sprint, keeping a running tally of sprint progress
 pub trait HistoricalRecordClient {
     async fn get_historical_data(&self) -> Result<Option<HistoricalRecords>>;
     async fn put_historical_data(&self, ticket_data: &HistoricalRecords) -> Result<()>;

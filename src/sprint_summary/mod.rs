@@ -118,6 +118,8 @@ impl SprintEventMessageGenerator for SprintEvent {
                     name: self.sprint_context.name.clone(),
                     channel_id: self.sprint_context.channel_id.to_string(),
                     start_date: print_current_date(),
+                    open_tickets_count_beginning: ticket_summary.open_ticket_count,
+                    in_scope_tickets_count_beginning: ticket_summary.in_scope_ticket_count,
                     trello_board: env::var("TRELLO_BOARD_ID").expect("TRELLO_BOARD_ID environment variable should exist") //TODO: parameterize
                 }).await?;
                 let eventbridge_client = create_eventbridge_client().await;
@@ -158,26 +160,34 @@ impl SprintEventMessageGenerator for SprintEvent {
             "/sprint-review" => {
                 let eventbridge_client = create_eventbridge_client().await;
                 eventbridge_client.delete_daily_trigger_rule(&self.sprint_context.name).await?;
+                let sprint_data = json_storage_client.get_sprint_data().await?.expect("ongoing sprint should exist");
                 json_storage_client.clear_sprint_data().await?;
+
+                let open_tickets_added_count = ticket_summary.open_ticket_count - sprint_data.open_tickets_count_beginning;
+                let tickets_added_to_scope_count = ticket_summary.in_scope_ticket_count - sprint_data.in_scope_tickets_count_beginning;
 
                 let mut message_blocks = vec![
                     header_block(&format!("🎆 Sprint {} Review: {} - {}", self.sprint_context.name, print_current_date(), self.sprint_context.end_date)),
                     header_block(&format!("\n*{}/{} Tickets* Completed in {} Days*", ticket_summary.completed_tickets.len(), ticket_summary.ticket_count, self.sprint_context.total_days())),
-                    header_block(&format!("\n*{:.2}% of tasks completed.*", ticket_summary.completed_percentage))
+                    header_block(&format!("\n*{:.2}% of tasks completed.*", ticket_summary.completed_percentage)),
+                    header_block(&format!("\n{} tickets added to sprint", open_tickets_added_count)), //hide if 0 or show "removed" if negative
+                    header_block(&format!("\n{} tickets added to scope", tickets_added_to_scope_count)), //hide if 0 or show "removed" if negative
                 ];
+                message_blocks.extend(ticket_summary.into_slack_blocks());
                 message_blocks.extend(historical_data.into_slack_blocks());
                 message_blocks.push(board_link_block);
                 
-                //from ticket_summary, remove completed tickets, then push back into ticket_data
+                //add method to ticket_summary to remove completed and backlogged tickets, then push back into ticket_data.
                 json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
-                //clear_ticket_data(&json_storage_client).await?; //only clear tickets completed. add snails to tickets that carry over.
 
                 historical_data.history.push(HistoricalRecord {
                     name: self.sprint_context.name.clone(),
                     start_date: self.sprint_context.start_date.clone(),
                     end_date: self.sprint_context.end_date.clone(),
                     percent_complete: ticket_summary.completed_percentage,
-                    num_tickets_complete: ticket_summary.completed_tickets.len() as u32,
+                    completed_tickets_count: ticket_summary.completed_tickets.len() as u32,
+                    open_tickets_added_count,
+                    tickets_added_to_scope_count
                 });
                 
                 json_storage_client.put_historical_data(&historical_data).await?;

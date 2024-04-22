@@ -14,6 +14,8 @@ struct GithubPullRequest {
     head: GithubHead,
     comments: u32,
     draft: bool,
+    merged: bool,
+    mergeable: Option<bool>
 }
 
 #[derive(Deserialize, Debug)]
@@ -129,6 +131,8 @@ impl PullRequestClient for Client {
                 pr_url: pr_url.to_string(),
                 state,
                 comments: pr.comments,
+                merged: pr.merged,
+                mergeable: pr.mergeable,
                 is_draft: pr.draft,
                 action_required_check_runs,
                 failing_check_runs

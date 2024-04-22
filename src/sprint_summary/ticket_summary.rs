@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use serde::Serialize;
 use serde_json::Value;
 use crate::utils::slack_components::{divider_block, list_block, section_block};
-use super::{sprint_records::{DailyTicketContext, DailyTicketContexts}, ticket::Ticket};
+use super::{sprint_records::{DailyTicketContext, DailyTicketContexts}, ticket::Ticket, ticket_state::TicketState};
 
 trait PrioritizedPush {
     fn prioritized_push(&mut self, ticket: Ticket);
@@ -41,20 +41,16 @@ impl From<Vec<Ticket>> for TicketSummary {
         let mut completed_tickets = VecDeque::new();
         let mut backlogged_tickets = VecDeque::new();
 
-        let filtered_tickets: Vec<Ticket> = tickets.into_iter()
-            .filter(|ticket| ticket.details.list_name != "Objectives" && ticket.details.list_name != "Backlog/Ideas")
-            .collect();
-
-        let ticket_count = filtered_tickets.len() as u32;
+        let ticket_count = tickets.len() as u32;
         let mut open_ticket_count = 0;
         let mut in_scope_ticket_count = 0;
         
-        for ticket in filtered_tickets {
-            if ticket.is_backlogged {
+        for ticket in tickets {
+            if ticket.details.state == TicketState::BacklogIdeas {
                 backlogged_tickets.prioritized_push(ticket);
-            } else if ticket.details.list_name == "Done" {
+            } else if ticket.details.state == TicketState::Done {
                 completed_tickets.prioritized_push(ticket);
-            } else if ticket.details.list_name == "In Scope" {
+            } else if ticket.details.state == TicketState::InScope {
                 in_scope_ticket_count += 1;
             } else {
                 open_ticket_count += 1;

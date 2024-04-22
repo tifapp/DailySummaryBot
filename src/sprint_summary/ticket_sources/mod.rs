@@ -49,7 +49,7 @@ impl TicketSummaryClient for Client {
                     .unwrap_or(0);
         
                 let last_moved_on = if let Some(previous) = &previous_version {
-                    if previous.list_name != ticket_details.list_name {
+                    if previous.state != ticket_details.state {
                         print_current_date()
                     } else {
                         previous.last_moved_on.clone()
@@ -69,7 +69,6 @@ impl TicketSummaryClient for Client {
                             .map(|name| name.to_string()))
                         .collect::<Vec<String>>(),
                     details: ticket_details,
-                    is_backlogged: false,
                 });
             }
             

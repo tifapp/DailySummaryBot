@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 use crate::utils::date::{days_between, print_current_date};
 use crate::utils::slack_components::{link_element, text_element, user_element};
 use super::sprint_records::DailyTicketContext;
+use super::ticket_state::TicketState;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CheckRunDetails {
@@ -18,13 +19,15 @@ pub struct PullRequest {
     pub is_draft: bool,
     pub action_required_check_runs: Vec<CheckRunDetails>,
     pub failing_check_runs: Vec<CheckRunDetails>,
+    pub merged: bool,
+    pub mergeable: Option<bool>
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TicketDetails {
     pub id: String,
     pub name: String,
-    pub list_name: String,
+    pub state: TicketState,
     pub url: String,
     pub member_ids: Vec<String>,
     pub has_description: bool,
@@ -44,14 +47,10 @@ pub struct Ticket {
     pub members: Vec<String>,
     pub details: TicketDetails,
     pub pr: Option<PullRequest>,
-    pub is_backlogged: bool,
 }
 
 impl Ticket {
-    fn display_sprint_age(&self) -> String {
-        std::iter::repeat("🐌").take(self.sprint_age).collect::<String>()
-    }
-
+    //add unit test for emoji/no emoji
     fn ticket_name_new_emoji(&self) -> String {
         if let Ok(days) = days_between(Some(&self.added_on), &print_current_date()) {
             if days <= 2 {
@@ -62,14 +61,16 @@ impl Ticket {
         "".to_string()
     }
     
+    //add unit test for emoji/no emoji
     fn ticket_name_age_emoji(&self) -> String {
         if self.sprint_age > 0 {
-            return self.display_sprint_age();
+            return std::iter::repeat("🐌").take(self.sprint_age).collect::<String>();
         }
 
         "".to_string()
     }
     
+    //add unit test for emoji/no emoji
     fn ticket_name_goal_emoji(&self) -> String {
         if self.sprint_age > 0 {
             return "🏁".to_string();
@@ -78,6 +79,7 @@ impl Ticket {
         "".to_string()
     }
 
+    //add unit tests for no name annotation/with name annotation
     fn annotated_ticket_name(&self) -> String {
         let statuses = vec![
             self.ticket_name_new_emoji(), 
@@ -98,16 +100,19 @@ impl Ticket {
         }
     }
 
+    //add unit test to assert output format
     fn ticket_name_block(&self) -> Value {
-        link_element(&self.details.url, &self.annotated_ticket_name(), Some(json!({"bold": true, "strike": self.is_backlogged})))
+        link_element(&self.details.url, &self.annotated_ticket_name(), Some(json!({"bold": true, "strike": self.details.state == TicketState::BacklogIdeas})))
     }
 
+    //add unit test for each warning, and a unit test for the whole block for no warnings/with warnings
     fn warning_blocks(&self) -> Vec<Value> {
         let mut warnings = vec![];
 
-        if self.details.list_name != "Investigation/Discussion" && (!self.details.has_description || !self.details.has_labels)
-        || (self.details.list_name == "In Progress" && self.members.is_empty())
-        || (self.details.list_name == "QA/Bug Testing" && self.pr.is_none()) {
+        if (self.details.state > TicketState::InScope && self.members.is_empty())
+        || (self.details.state > TicketState::InvestigationDiscussion && (!self.details.has_description || !self.details.has_labels))
+        || (self.details.state > TicketState::InProgress && self.pr.is_none())
+        || (self.details.state > TicketState::PendingRelease && !self.pr.as_ref().unwrap().merged) {
             warnings.push("⚠️");
             
             if !self.details.has_description {
@@ -122,11 +127,15 @@ impl Ticket {
             if self.pr.is_none() {
                 warnings.push(" | Missing PR");
             }
+            if !self.pr.as_ref().unwrap().merged {
+                warnings.push(" | PR not merged");
+            }
         }
 
         warnings.iter().map(|warning| text_element(warning, Some(json!({"bold": true})))).collect()
     }
 
+    //add a unit test for each component, and a unit test for the whole block for no pr data/with pr data
     fn pr_blocks(&self) -> Vec<Value> {
         let mut blocks = vec![];
 
@@ -142,6 +151,14 @@ impl Ticket {
 
             if pr.comments > 0 {
                 blocks.push(text_element(&format!(" | {} 💬", pr.comments), None));
+            }
+            
+            if pr.merged == true {
+                blocks.push(text_element(" | Merged", None));
+            } else if pr.mergeable == Some(true) {
+                blocks.push(text_element(" | Pending Merge", None));
+            } else {
+                blocks.push(text_element(" | Can't Merge (see GitHub for details)", Some(json!({"bold": true}))));
             }
 
             if !pr.failing_check_runs.is_empty() {
@@ -160,6 +177,7 @@ impl Ticket {
         blocks
     }
 
+    //add unit test for with/no checklist items
     fn checklist_blocks(&self) -> Vec<Value> {
         let mut blocks = vec![];
         
@@ -171,6 +189,7 @@ impl Ticket {
         blocks
     }
 
+    //add unit test for with multiple members/no members
     fn member_blocks(&self) -> Vec<Value> {
         let mut blocks = vec![];
 
@@ -185,6 +204,7 @@ impl Ticket {
         blocks
     }
 
+    //add unit test with all components to validate the structure
     pub fn into_slack_blocks(&self) -> Value {
         let mut ticket_elements = vec![
             self.ticket_name_block()
@@ -210,7 +230,7 @@ impl From<&Ticket> for DailyTicketContext {
             id: ticket.details.id.clone(),
             name: ticket.details.name.clone(),
             url: ticket.details.url.clone(),
-            list_name: ticket.details.list_name.clone(),
+            state: ticket.details.state.clone(),
             is_goal: ticket.details.is_goal,
             added_on: ticket.added_on.clone(),
             added_in_sprint: ticket.added_in_sprint.clone(),
@@ -227,12 +247,11 @@ impl From<&DailyTicketContext> for Ticket {
             sprint_age: 0,
             added_in_sprint: record.added_in_sprint.clone(),
             added_on: record.added_on.clone(),
-            last_moved_on: record.last_moved_on.clone(),  
-            is_backlogged: true,
+            last_moved_on: record.last_moved_on.clone(),
             details: TicketDetails {            
                 id: record.id.clone(),
                 name: record.name.clone(),
-                list_name: "None".to_string(),      
+                state: TicketState::BacklogIdeas,      
                 url: record.url.clone(),                          
                 has_description: true,   
                 has_labels: true,                      

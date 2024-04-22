@@ -7,6 +7,8 @@ use serde_json::{from_value, Value};
 use crate::utils::s3::JsonStorageClient;
 use crate::utils::slack_components::section_block;
 
+use super::ticket_state::TicketState;
+
 pub trait SprintMemberClient {
     async fn get_sprint_members(&self) -> Result<Option<HashMap<String, String>>>;
 }
@@ -67,7 +69,7 @@ pub struct DailyTicketContext {
     pub id: String,
     pub name: String, 
     pub url: String,
-    pub list_name: String,
+    pub state: TicketState,
     pub is_goal: bool,
     pub added_on: String,
     pub added_in_sprint: String,

@@ -103,75 +103,136 @@ impl Ticket {
     //add unit test to assert output format
     fn ticket_name_block(&self) -> Value {
         link_element(&self.details.url, &self.annotated_ticket_name(), Some(json!({"bold": true, "strike": self.details.state == TicketState::BacklogIdeas})))
+    }    
+
+    //add unit test for string/no string
+    fn check_assignees(&self) -> Option<String> {
+        if self.details.state > TicketState::InScope && self.members.is_empty() {
+            Some(" | Missing Assignees".to_string())
+        } else {
+            None
+        }
     }
 
-    //add unit test for each warning, and a unit test for the whole block for no warnings/with warnings
-    fn warning_blocks(&self) -> Vec<Value> {
-        let mut warnings = vec![];
-
-        if (self.details.state > TicketState::InScope && self.members.is_empty())
-        || (self.details.state > TicketState::InvestigationDiscussion && (!self.details.has_description || !self.details.has_labels))
-        || (self.details.state > TicketState::InProgress && self.pr.is_none())
-        || (self.details.state > TicketState::PendingRelease && !self.pr.as_ref().unwrap().merged) {
-            warnings.push("⚠️");
-            
-            if !self.details.has_description {
-                warnings.push(" | Missing Description");
-            }
-            if !self.details.has_labels {
-                warnings.push(" | Missing Labels");
-            }
-            if self.members.is_empty() {
-                warnings.push(" | Missing Assignees");
-            }
-            if self.pr.is_none() {
-                warnings.push(" | Missing PR");
-            }
-            if !self.pr.as_ref().unwrap().merged {
-                warnings.push(" | PR not merged");
-            }
+    //add unit test for string/no string
+    fn check_description(&self) -> Option<String> {
+        if self.details.state > TicketState::InvestigationDiscussion && !self.details.has_description {
+            Some(" | Missing Description".to_string())
+        } else {
+            None
         }
+    }
+
+    //add unit test for string/no string
+    fn check_labels(&self) -> Option<String> {
+        if self.details.state > TicketState::InvestigationDiscussion && !self.details.has_labels {
+            Some(" | Missing Labels".to_string())
+        } else {
+            None
+        }
+    }
+
+    //add unit test for string/no string
+    fn check_pr_missing(&self) -> Option<String> {
+        if self.details.state > TicketState::InProgress && self.pr.is_none() {
+            Some(" | Missing PR".to_string())
+        } else {
+            None
+        }
+    }
+
+    //add unit test for string/no string
+    fn check_pr_merged(&self) -> Option<String> {
+        if let Some(pr) = &self.pr {
+            if self.details.state > TicketState::PendingRelease && !pr.merged {
+                Some(" | PR not merged".to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    //add a unit test for the whole block for no warnings/with warnings
+    fn warning_blocks(&self) -> Vec<Value> {
+        let mut warnings = Vec::new();
+
+        let checks = vec![
+            self.check_description(),
+            self.check_labels(),
+            self.check_assignees(),
+            self.check_pr_missing(),
+            self.check_pr_merged(),
+        ];
+
+        if checks.iter().any(Option::is_some) {
+            warnings.push("\n⚠️".to_string());
+        }
+
+        warnings.extend(checks.into_iter().flatten());
 
         warnings.iter().map(|warning| text_element(warning, Some(json!({"bold": true})))).collect()
     }
 
-    //add a unit test for each component, and a unit test for the whole block for no pr data/with pr data
+    //add a unit test for each branch
+    fn pr_link_block(&self, pr: &PullRequest) -> Value {
+        link_element(&pr.pr_url,
+            if pr.is_draft {
+                "🚧 View Draft PR"
+            } else {
+                "View PR"
+            },
+            None)
+    }
+
+    //add a unit test for each branch
+    fn pr_comments_block(&self, pr: &PullRequest) -> Option<Value> {
+        if pr.comments > 0 {
+            Some(text_element(&format!(" | {} 💬", pr.comments), None))
+        } else {
+            None
+        }
+    }
+
+    //add a unit test for each branch
+    fn pr_merge_status_block(&self, pr: &PullRequest) -> Value {
+        if pr.merged {
+            text_element(" | Merged", None)
+        } else if pr.mergeable == Some(true) {
+            text_element(" | Pending Merge", None)
+        } else {
+            text_element(" | Can't Merge (see GitHub for details)", Some(json!({"bold": true})))
+        }
+    }
+
+    //add a unit test for with/without failing check runs
+    fn pr_failing_checks_block(&self, pr: &PullRequest) -> Vec<Value> {
+        let mut blocks = Vec::new();
+        if !pr.failing_check_runs.is_empty() {
+            blocks.push(text_element(" | Failing check runs: ", None));
+            for check_run in &pr.failing_check_runs {
+                blocks.push(link_element(&check_run.details_url, 
+                    &check_run.name, 
+                    Some(json!({"bold": true, "code": true}))));
+            }
+        }
+        blocks
+    }
+
+    //add a unit test for the whole block for no pr data/with pr data
     fn pr_blocks(&self) -> Vec<Value> {
         let mut blocks = vec![];
 
         if let Some(pr) = &self.pr {
-            blocks.push(text_element("\n", None));
-            blocks.push(link_element(&pr.pr_url, 
-                if pr.is_draft {
-                    "🚧 View Draft PR"
-                } else {
-                    "View PR"
-                }, 
-                None));
-
-            if pr.comments > 0 {
-                blocks.push(text_element(&format!(" | {} 💬", pr.comments), None));
+            blocks.push(text_element("\n", None));  // Initial new line for separation
+            blocks.push(self.pr_link_block(pr));
+            if let Some(comment_block) = self.pr_comments_block(pr) {
+                blocks.push(comment_block);
             }
-            
-            if pr.merged == true {
-                blocks.push(text_element(" | Merged", None));
-            } else if pr.mergeable == Some(true) {
-                blocks.push(text_element(" | Pending Merge", None));
-            } else {
-                blocks.push(text_element(" | Can't Merge (see GitHub for details)", Some(json!({"bold": true}))));
-            }
-
-            if !pr.failing_check_runs.is_empty() {
-                blocks.push(text_element(" | Failing check runs: ", None));
-
-                for check_run in &pr.failing_check_runs {
-                    blocks.push(link_element(&check_run.details_url, 
-                        &check_run.name, 
-                        Some(json!({"bold": true, "code": true}))));
-                }
-
-                blocks.push(text_element(" ", None));
-            }  
+            blocks.push(self.pr_merge_status_block(pr));
+            blocks.extend(self.pr_failing_checks_block(pr));
+            blocks.push(text_element(" ", None)); // Closing space
         }
 
         blocks

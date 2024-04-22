@@ -21,6 +21,7 @@ impl PrioritizedPush for VecDeque<Ticket> {
 
 #[derive(Debug, Serialize)]
 pub struct TicketSummary {
+    //Mention the users who are on PR duty that week. Configurable from json file. Make it a weekly thing.
     blocked_prs: VecDeque<Ticket>,
     open_prs: VecDeque<Ticket>,
     open_tickets: VecDeque<Ticket>,

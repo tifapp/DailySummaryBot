@@ -13,7 +13,6 @@ pub struct CheckRunDetails {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PullRequest {
-    pub pr_url: String,
     pub state: String,
     pub comments: u32,
     pub is_draft: bool,
@@ -177,7 +176,7 @@ impl Ticket {
 
     //add a unit test for each branch
     fn pr_link_block(&self, pr: &PullRequest) -> Value {
-        link_element(&pr.pr_url,
+        link_element(&self.details.pr_url.as_ref().unwrap(),
             if pr.is_draft {
                 "🚧 View Draft PR"
             } else {

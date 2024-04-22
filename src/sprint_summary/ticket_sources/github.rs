@@ -128,7 +128,6 @@ impl PullRequestClient for Client {
         
         Ok(
             PullRequest {
-                pr_url: pr_url.to_string(),
                 state,
                 comments: pr.comments,
                 merged: pr.merged,

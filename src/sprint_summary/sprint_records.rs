@@ -24,7 +24,7 @@ impl<T> SprintMemberClient for T where T: JsonStorageClient, {
 
 //Sprint record is updated at the beginning of each sprint
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SprintRecord {
+pub struct LiveSprintContext {
     pub name: String,
     pub start_date: String,
     pub end_date: String,
@@ -34,23 +34,23 @@ pub struct SprintRecord {
     pub in_scope_tickets_count_beginning: u32,
 }
 
-pub trait SprintRecordClient {
-    async fn get_sprint_data(&self) -> Result<Option<SprintRecord>>;
-    async fn put_sprint_data(&self, sprint_record: &SprintRecord) -> Result<()>;
+pub trait LiveSprintContextClient {
+    async fn get_sprint_data(&self) -> Result<Option<LiveSprintContext>>;
+    async fn put_sprint_data(&self, sprint_record: &LiveSprintContext) -> Result<()>;
     async fn clear_sprint_data(&self) -> Result<()>;
 }
 
-impl<T> SprintRecordClient for T where T: JsonStorageClient, {
-    async fn get_sprint_data(&self) -> Result<Option<SprintRecord>> {
+impl<T> LiveSprintContextClient for T where T: JsonStorageClient, {
+    async fn get_sprint_data(&self) -> Result<Option<LiveSprintContext>> {
         self.get_json("sprint_data.json").await?
             .map(|json_value| {
-                from_value::<SprintRecord>(json_value)
+                from_value::<LiveSprintContext>(json_value)
                     .context("Failed to deserialize sprint data")
             })
             .transpose()
     }
     
-    async fn put_sprint_data(&self, sprint_data: &SprintRecord) -> Result<()> {
+    async fn put_sprint_data(&self, sprint_data: &LiveSprintContext) -> Result<()> {
         let sprint_data_value = serde_json::to_value(sprint_data)
             .context("Failed to convert ticket data to JSON value")?;
     
@@ -63,7 +63,7 @@ impl<T> SprintRecordClient for T where T: JsonStorageClient, {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct TicketRecord {
+pub struct DailyTicketContext {
     pub id: String,
     pub name: String, 
     pub url: String,
@@ -76,26 +76,26 @@ pub struct TicketRecord {
 
 //Ticket records update daily
 #[derive(Debug, Serialize, Deserialize)]
-pub struct TicketRecords {
-    pub tickets: VecDeque<TicketRecord>,
+pub struct DailyTicketContexts {
+    pub tickets: VecDeque<DailyTicketContext>,
 }
 
-pub trait TicketRecordClient {
-    async fn get_ticket_data(&self) -> Result<Option<TicketRecords>>;
-    async fn put_ticket_data(&self, ticket_data: &TicketRecords) -> Result<()>;
+pub trait DailyTicketContextClient {
+    async fn get_ticket_data(&self) -> Result<Option<DailyTicketContexts>>;
+    async fn put_ticket_data(&self, ticket_data: &DailyTicketContexts) -> Result<()>;
 }
 
-impl<T> TicketRecordClient for T where T: JsonStorageClient, {
-    async fn get_ticket_data(&self) -> Result<Option<TicketRecords>> {
+impl<T> DailyTicketContextClient for T where T: JsonStorageClient, {
+    async fn get_ticket_data(&self) -> Result<Option<DailyTicketContexts>> {
         self.get_json("ticket_data.json").await?
             .map(|json_value| {
-                from_value::<TicketRecords>(json_value)
+                from_value::<DailyTicketContexts>(json_value)
                     .context("Failed to deserialize sprint data")
             })
             .transpose()
     }
 
-    async fn put_ticket_data(&self, ticket_data: &TicketRecords) -> Result<()> {
+    async fn put_ticket_data(&self, ticket_data: &DailyTicketContexts) -> Result<()> {
         let ticket_data_value = serde_json::to_value(ticket_data)
             .context("Failed to convert ticket data to JSON value")?;
 
@@ -104,7 +104,7 @@ impl<T> TicketRecordClient for T where T: JsonStorageClient, {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct HistoricalRecord {
+pub struct CumulativeSprintContext {
     pub name: String,
     pub start_date: String,
     pub end_date: String,
@@ -115,11 +115,11 @@ pub struct HistoricalRecord {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct HistoricalRecords {
-    pub history: Vec<HistoricalRecord>
+pub struct CumulativeSprintContexts {
+    pub history: Vec<CumulativeSprintContext>
 }
 
-impl HistoricalRecords {
+impl CumulativeSprintContexts {
     pub fn into_slack_blocks(&self) -> Vec<Value> {
         if self.history.is_empty() {
             return vec![]
@@ -155,22 +155,22 @@ impl HistoricalRecords {
 }
 
 //Historical record is updated at the end of each sprint, keeping a running tally of sprint progress
-pub trait HistoricalRecordClient {
-    async fn get_historical_data(&self) -> Result<Option<HistoricalRecords>>;
-    async fn put_historical_data(&self, ticket_data: &HistoricalRecords) -> Result<()>;
+pub trait CumulativeSprintContextClient {
+    async fn get_historical_data(&self) -> Result<Option<CumulativeSprintContexts>>;
+    async fn put_historical_data(&self, ticket_data: &CumulativeSprintContexts) -> Result<()>;
 }
 
-impl<T> HistoricalRecordClient for T where T: JsonStorageClient, {
-    async fn get_historical_data(&self) -> Result<Option<HistoricalRecords>> {
+impl<T> CumulativeSprintContextClient for T where T: JsonStorageClient, {
+    async fn get_historical_data(&self) -> Result<Option<CumulativeSprintContexts>> {
         self.get_json("historical_data.json").await?
             .map(|json_value| {
-                from_value::<HistoricalRecords>(json_value)
+                from_value::<CumulativeSprintContexts>(json_value)
                     .context("Failed to deserialize sprint data")
             })
             .transpose()
     }
     
-    async fn put_historical_data(&self, historical_data: &HistoricalRecords) -> Result<()> {
+    async fn put_historical_data(&self, historical_data: &CumulativeSprintContexts) -> Result<()> {
         let historical_data_value = serde_json::to_value(historical_data)
             .context("Failed to convert historical data to JSON value")?;
     

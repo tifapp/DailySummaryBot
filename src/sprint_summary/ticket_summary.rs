@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use serde::Serialize;
 use serde_json::Value;
 use crate::utils::slack_components::{divider_block, list_block, section_block};
-use super::{sprint_records::{TicketRecord, TicketRecords}, ticket::Ticket};
+use super::{sprint_records::{DailyTicketContext, DailyTicketContexts}, ticket::Ticket};
 
 trait PrioritizedPush {
     fn prioritized_push(&mut self, ticket: Ticket);
@@ -123,12 +123,12 @@ impl TicketSummary {
     }
 }
 
-impl From<&TicketSummary> for TicketRecords {
+impl From<&TicketSummary> for DailyTicketContexts {
     fn from(summary: &TicketSummary) -> Self {
         let mut tickets = VecDeque::new();
 
         let mut extend_tickets = |vec: &VecDeque<Ticket>| {
-            tickets.extend(vec.iter().map(|ticket| TicketRecord::from(ticket)));
+            tickets.extend(vec.iter().map(|ticket| DailyTicketContext::from(ticket)));
         };
 
         extend_tickets(&summary.blocked_prs);
@@ -137,6 +137,6 @@ impl From<&TicketSummary> for TicketRecords {
         extend_tickets(&summary.completed_tickets);
         extend_tickets(&summary.backlogged_tickets);
 
-        TicketRecords { tickets }
+        DailyTicketContexts { tickets }
     }
 }

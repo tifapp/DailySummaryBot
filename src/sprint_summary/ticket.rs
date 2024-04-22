@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use crate::utils::date::{days_between, print_current_date};
 use crate::utils::slack_components::{link_element, text_element, user_element};
-use super::sprint_records::TicketRecord;
+use super::sprint_records::DailyTicketContext;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CheckRunDetails {
@@ -204,9 +204,9 @@ impl Ticket {
     }
 }
 
-impl From<&Ticket> for TicketRecord {
+impl From<&Ticket> for DailyTicketContext {
     fn from(ticket: &Ticket) -> Self {
-        TicketRecord {
+        DailyTicketContext {
             id: ticket.details.id.clone(),
             name: ticket.details.name.clone(),
             url: ticket.details.url.clone(),
@@ -219,8 +219,8 @@ impl From<&Ticket> for TicketRecord {
     }
 }
 
-impl From<&TicketRecord> for Ticket {
-    fn from(record: &TicketRecord) -> Self {
+impl From<&DailyTicketContext> for Ticket {
+    fn from(record: &DailyTicketContext) -> Self {
         Ticket {
             members: vec![],
             pr: None,

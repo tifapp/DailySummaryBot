@@ -15,7 +15,16 @@ use crate::utils::date::{days_between, print_current_date};
 use crate::utils::eventbridge::{create_eventbridge_client, EventBridgeExtensions};
 use crate::utils::s3::create_json_storage_client;
 use crate::utils::slack_components::{context_block, header_block, primary_button_block, section_block};
-use self::sprint_records::{HistoricalRecord, HistoricalRecordClient, HistoricalRecords, SprintMemberClient, SprintRecord, SprintRecordClient, TicketRecordClient, TicketRecords};
+use self::sprint_records::{
+    CumulativeSprintContext, 
+    CumulativeSprintContextClient, 
+    CumulativeSprintContexts, 
+    SprintMemberClient, 
+    LiveSprintContext, 
+    LiveSprintContextClient, 
+    DailyTicketContextClient, 
+    DailyTicketContexts
+};
 use self::ticket_sources::TicketSummaryClient;
 
 #[derive(Debug, Deserialize)]
@@ -76,7 +85,7 @@ impl SprintEventMessageGenerator for SprintEvent {
         let json_storage_client = create_json_storage_client().await;
         info!("Made json sprint client");
         
-        let previous_ticket_data = json_storage_client.get_ticket_data().await?.unwrap_or(TicketRecords {
+        let previous_ticket_data = json_storage_client.get_ticket_data().await?.unwrap_or(DailyTicketContexts {
             tickets: VecDeque::new(),
         });
         info!("Have previous ticket data");
@@ -84,7 +93,7 @@ impl SprintEventMessageGenerator for SprintEvent {
         let user_mapping = json_storage_client.get_sprint_members().await?.unwrap_or(HashMap::new());
         info!("Have user mapping");
         
-        let mut historical_data = json_storage_client.get_historical_data().await?.unwrap_or(HistoricalRecords {
+        let mut historical_data = json_storage_client.get_historical_data().await?.unwrap_or(CumulativeSprintContexts {
             history: Vec::new(),
         });
 
@@ -102,7 +111,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 ];
                 message_blocks.extend(ticket_summary.into_slack_blocks());
                 message_blocks.extend(
-                    json_storage_client.get_historical_data().await?.unwrap_or_else(|| HistoricalRecords {
+                    json_storage_client.get_historical_data().await?.unwrap_or_else(|| CumulativeSprintContexts {
                         history: Vec::new(),
                     })
                     .into_slack_blocks()
@@ -113,7 +122,7 @@ impl SprintEventMessageGenerator for SprintEvent {
             },
             "/sprint-kickoff-confirm" => {
                 json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
-                json_storage_client.put_sprint_data(&SprintRecord {
+                json_storage_client.put_sprint_data(&LiveSprintContext {
                     end_date: self.sprint_context.end_date.clone(),
                     name: self.sprint_context.name.clone(),
                     channel_id: self.sprint_context.channel_id.to_string(),
@@ -134,8 +143,6 @@ impl SprintEventMessageGenerator for SprintEvent {
                 Ok(message_blocks)
             },
             "/sprint-check-in" => {
-                json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
-
                 let mut message_blocks = vec![
                     header_block(&format!("{} Sprint {} Check-In: {}", self.sprint_context.time_indicator(), self.sprint_context.name, print_current_date())),
                     section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint.", ticket_summary.open_ticket_count, ticket_summary.ticket_count, self.sprint_context.days_until_end())),
@@ -180,7 +187,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 //add method to ticket_summary to remove completed and backlogged tickets, then push back into ticket_data.
                 json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
 
-                historical_data.history.push(HistoricalRecord {
+                historical_data.history.push(CumulativeSprintContext {
                     name: self.sprint_context.name.clone(),
                     start_date: self.sprint_context.start_date.clone(),
                     end_date: self.sprint_context.end_date.clone(),

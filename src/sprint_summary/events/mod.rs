@@ -4,10 +4,10 @@ use lambda_runtime::LambdaEvent;
 use serde_json::Value;
 use crate::utils::{http::HttpRequest, s3::create_json_storage_client};
 use anyhow::{anyhow, Error, Result};
-use super::{sprint_records::{HistoricalRecordClient, HistoricalRecords, SprintRecord, SprintRecordClient}, SprintContext, SprintEvent, SprintEventParser};
+use super::{sprint_records::{CumulativeSprintContextClient, CumulativeSprintContexts, LiveSprintContext, LiveSprintContextClient}, SprintContext, SprintEvent, SprintEventParser};
 
-impl From<&SprintRecord> for SprintContext {
-    fn from(record: &SprintRecord) -> Self {
+impl From<&LiveSprintContext> for SprintContext {
+    fn from(record: &LiveSprintContext) -> Self {
         SprintContext {
             start_date: record.start_date.clone(),
             end_date: record.end_date.clone(),
@@ -59,7 +59,7 @@ impl SprintEventParser for SprintEvents {
             Ok(None) => {
                 match self {
                     SprintEvents::SprintPreview(sprint_event) | SprintEvents::SprintKickoff(sprint_event) => {
-                        let history = json_client.get_historical_data().await?.unwrap_or(HistoricalRecords {
+                        let history = json_client.get_historical_data().await?.unwrap_or(CumulativeSprintContexts {
                             history: Vec::new(),
                         });
 

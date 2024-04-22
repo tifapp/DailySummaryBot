@@ -8,16 +8,16 @@ use reqwest::Client;
 use trello::TicketDetailsClient;
 use github::PullRequestClient;
 use crate::utils::date::print_current_date;
-use super::sprint_records::{HistoricalRecords, TicketRecords};
+use super::sprint_records::{CumulativeSprintContexts, DailyTicketContexts};
 use super::ticket::Ticket;
 use super::ticket_summary::TicketSummary;
 
 pub trait TicketSummaryClient {
-    async fn fetch_ticket_summary(&self, current_sprint_name: &str, historical_records: &HistoricalRecords, previous_ticket_data: TicketRecords, user_mapping: HashMap<String, String>) -> Result<TicketSummary>;
+    async fn fetch_ticket_summary(&self, current_sprint_name: &str, historical_records: &CumulativeSprintContexts, previous_ticket_data: DailyTicketContexts, user_mapping: HashMap<String, String>) -> Result<TicketSummary>;
 }
 
 impl TicketSummaryClient for Client {
-    async fn fetch_ticket_summary(&self, current_sprint_name: &str, historical_records: &HistoricalRecords, previous_ticket_data: TicketRecords, user_mapping: HashMap<String, String>) -> Result<TicketSummary> {    
+    async fn fetch_ticket_summary(&self, current_sprint_name: &str, historical_records: &CumulativeSprintContexts, previous_ticket_data: DailyTicketContexts, user_mapping: HashMap<String, String>) -> Result<TicketSummary> {    
         let current_ticket_details = self.fetch_ticket_details().await?;
         let mut current_ticket_ids: Vec<String> = vec![];
 

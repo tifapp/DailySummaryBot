@@ -98,7 +98,7 @@ impl SprintEventMessageGenerator for SprintEvent {
             history: Vec::new(),
         });
 
-        let ticket_summary = fetch_client.fetch_ticket_summary(&self.sprint_context.name, &historical_data, previous_ticket_data, user_mapping).await?;
+        let mut ticket_summary = fetch_client.fetch_ticket_summary(&self.sprint_context.name, &historical_data, previous_ticket_data, user_mapping).await?;
         info!("Have ticket summary");
         
         let trello_board_id = env::var("TRELLO_BOARD_ID").expect("TRELLO_BOARD_ID environment variable should exist");
@@ -184,9 +184,6 @@ impl SprintEventMessageGenerator for SprintEvent {
                 message_blocks.extend(ticket_summary.into_slack_blocks());
                 message_blocks.extend(historical_data.into_slack_blocks());
                 message_blocks.push(board_link_block);
-                
-                //add method to ticket_summary to remove completed and backlogged tickets, then push back into ticket_data.
-                json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
 
                 historical_data.history.push(CumulativeSprintContext {
                     name: self.sprint_context.name.clone(),
@@ -199,6 +196,9 @@ impl SprintEventMessageGenerator for SprintEvent {
                 });
                 
                 json_storage_client.put_historical_data(&historical_data).await?;
+                
+                ticket_summary.clear_completed_and_backlogged();
+                json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
 
                 Ok(message_blocks)
             },

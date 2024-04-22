@@ -33,6 +33,22 @@ pub struct TicketSummary {
     pub completed_percentage: f64,
 }
 
+impl TicketSummary {
+    pub fn clear_completed_and_backlogged(&mut self) {
+        self.completed_tickets.clear();
+        self.backlogged_tickets.clear();
+        self.recalculate_metrics();
+    }
+
+    fn recalculate_metrics(&mut self) {
+        self.ticket_count = self.blocked_prs.len() as u32
+                            + self.open_prs.len() as u32
+                            + self.open_tickets.len() as u32;
+
+        self.completed_percentage = 0.0;
+    }
+}
+
 impl From<Vec<Ticket>> for TicketSummary {
     fn from(tickets: Vec<Ticket>) -> Self {
         let mut blocked_prs = VecDeque::new();

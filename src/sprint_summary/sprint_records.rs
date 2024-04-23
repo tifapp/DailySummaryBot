@@ -26,7 +26,7 @@ impl<T> SprintMemberClient for T where T: JsonStorageClient, {
 
 //Sprint record is updated at the beginning of each sprint
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LiveSprintContext {
+pub struct ActiveSprintContext {
     pub name: String,
     pub start_date: String,
     pub end_date: String,
@@ -36,23 +36,23 @@ pub struct LiveSprintContext {
     pub in_scope_tickets_count_beginning: u32,
 }
 
-pub trait LiveSprintContextClient {
-    async fn get_sprint_data(&self) -> Result<Option<LiveSprintContext>>;
-    async fn put_sprint_data(&self, sprint_record: &LiveSprintContext) -> Result<()>;
+pub trait ActiveSprintContextClient {
+    async fn get_sprint_data(&self) -> Result<Option<ActiveSprintContext>>;
+    async fn put_sprint_data(&self, sprint_record: &ActiveSprintContext) -> Result<()>;
     async fn clear_sprint_data(&self) -> Result<()>;
 }
 
-impl<T> LiveSprintContextClient for T where T: JsonStorageClient, {
-    async fn get_sprint_data(&self) -> Result<Option<LiveSprintContext>> {
+impl<T> ActiveSprintContextClient for T where T: JsonStorageClient, {
+    async fn get_sprint_data(&self) -> Result<Option<ActiveSprintContext>> {
         self.get_json("sprint_data.json").await?
             .map(|json_value| {
-                from_value::<LiveSprintContext>(json_value)
+                from_value::<ActiveSprintContext>(json_value)
                     .context("Failed to deserialize sprint data")
             })
             .transpose()
     }
     
-    async fn put_sprint_data(&self, sprint_data: &LiveSprintContext) -> Result<()> {
+    async fn put_sprint_data(&self, sprint_data: &ActiveSprintContext) -> Result<()> {
         let sprint_data_value = serde_json::to_value(sprint_data)
             .context("Failed to convert ticket data to JSON value")?;
     
@@ -177,5 +177,162 @@ impl<T> CumulativeSprintContextClient for T where T: JsonStorageClient, {
             .context("Failed to convert historical data to JSON value")?;
     
         self.put_json("historical_data.json", &historical_data_value).await
+    }
+}
+
+#[cfg(test)]
+pub mod mocks {
+    use std::collections::VecDeque;
+
+    use crate::sprint_summary::ticket_state::TicketState;
+    use super::{CumulativeSprintContext, CumulativeSprintContexts, DailyTicketContext, DailyTicketContexts};
+    
+    impl Default for CumulativeSprintContext {
+        fn default() -> Self {
+            CumulativeSprintContext { 
+                name: "Sprint 101".to_string(), 
+                start_date: "01/01/24".to_string(), 
+                end_date: "02/01/24".to_string(), 
+                percent_complete: 0.9, 
+                completed_tickets_count: 12, 
+                tickets_added_to_scope_count: 5, 
+                open_tickets_added_count: 7 
+            }
+        }
+    }
+    
+    impl Default for CumulativeSprintContexts {
+        fn default() -> Self {
+            CumulativeSprintContexts {
+                history: vec![
+                    CumulativeSprintContext { ..CumulativeSprintContext::default() },
+                    CumulativeSprintContext { name: "Sprint 102".to_string(), ..CumulativeSprintContext::default() },
+                ]
+            }
+        }
+    }
+
+    impl Default for DailyTicketContext {
+        fn default() -> Self {
+            DailyTicketContext {
+                id: "abc123".to_string(),
+                added_on: "04/01/24".to_string(),
+                last_moved_on: "04/05/24".to_string(),
+                added_in_sprint: "Sprint 101".to_string(),
+                state: TicketState::Done,
+                name: "Recorded Ticket".to_string(),
+                url: "http://example.com/ticket2".to_string(),
+                is_goal: false,
+            }
+        }
+    }
+    
+    impl Default for DailyTicketContexts {
+        fn default() -> Self {
+            DailyTicketContexts {
+                tickets: VecDeque::from(vec![
+                    DailyTicketContext { ..DailyTicketContext::default() },
+                    DailyTicketContext { name: "Recorded Ticket 2".to_string(), id: "abc456".to_string(), ..DailyTicketContext::default() },
+                ])
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_into_slack_blocks_empty_history() {
+        let contexts = CumulativeSprintContexts { history: vec![] };
+        assert!(contexts.into_slack_blocks().is_empty());
+    }
+
+    #[test]
+    fn test_into_slack_blocks_existing_history() {
+        let contexts = CumulativeSprintContexts {
+            history: vec![
+                CumulativeSprintContext {
+                    name: "Sprint 1".to_string(),
+                    start_date: "01/01/24".to_string(),
+                    end_date: "01/15/24".to_string(),
+                    percent_complete: 90.0,
+                    completed_tickets_count: 100,
+                    tickets_added_to_scope_count: 50,
+                    open_tickets_added_count: 20,
+                },
+                CumulativeSprintContext {
+                    name: "Sprint 2".to_string(),
+                    start_date: "02/01/24".to_string(),
+                    end_date: "02/15/24".to_string(),
+                    percent_complete: 95.5,
+                    completed_tickets_count: 97,
+                    tickets_added_to_scope_count: 55,
+                    open_tickets_added_count: 25,
+                },
+            ],
+        };
+        let blocks = contexts.into_slack_blocks();
+        let expected_blocks = vec![
+            json!({"type": "section", "text": {"type": "mrkdwn", "text": "\n\n*Previous Sprints:*"}}),
+            json!({"type": "section", "text": {"type": "mrkdwn", "text": "01/01/24 - 01/15/24: *100 tickets | 90.00%*"}}),
+            json!({"type": "section", "text": {"type": "mrkdwn", "text": "02/01/24 - 02/15/24: *97 tickets | 95.50%*"}}),
+        ];
+        assert_eq!(blocks, expected_blocks);
+    }
+
+    #[test]
+    fn test_count_sprints_since_with_existing_name() {
+        let contexts = CumulativeSprintContexts {
+            history: vec![
+                CumulativeSprintContext { name: "Sprint 1".to_string(), ..Default::default() },
+                CumulativeSprintContext { name: "Sprint 2".to_string(), ..Default::default() },
+            ],
+        };
+        assert_eq!(contexts.count_sprints_since("Sprint 1"), 2);
+    }
+
+    #[test]
+    fn test_count_sprints_since_with_non_existing_name() {
+        let contexts = CumulativeSprintContexts {
+            history: vec![
+                CumulativeSprintContext { name: "Sprint 1".to_string(), ..Default::default() },
+            ],
+        };
+        assert_eq!(contexts.count_sprints_since("Sprint 3"), 0);
+    }
+
+    #[test]
+    fn test_count_sprints_since_empty_history() {
+        let contexts = CumulativeSprintContexts { history: vec![] };
+        assert_eq!(contexts.count_sprints_since("Sprint 1"), 0);
+    }
+
+    #[test]
+    fn test_was_sprint_name_used_with_existing_name() {
+        let contexts = CumulativeSprintContexts {
+            history: vec![
+                CumulativeSprintContext { name: "Sprint 1".to_string(), ..Default::default() },
+            ],
+        };
+        assert!(contexts.was_sprint_name_used("Sprint 1"));
+    }
+
+    #[test]
+    fn test_was_sprint_name_used_with_non_existing_name() {
+        let contexts = CumulativeSprintContexts {
+            history: vec![
+                CumulativeSprintContext { name: "Sprint 1".to_string(), ..Default::default() },
+            ],
+        };
+        assert!(!contexts.was_sprint_name_used("Sprint 2"));
+    }
+
+    #[test]
+    fn test_was_sprint_name_used_empty_history() {
+        let contexts = CumulativeSprintContexts { history: vec![] };
+        assert!(!contexts.was_sprint_name_used("Sprint 1"));
     }
 }

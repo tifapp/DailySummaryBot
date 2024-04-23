@@ -1,8 +1,10 @@
-use std::{collections::HashMap, env, sync::Arc};
+use std::{collections::HashMap, env};
 use serde::{Deserialize, Serialize};
-use reqwest::{Client, Error};
-use anyhow::Result;
+use reqwest::Client;
+use anyhow::{Result, Error};
 use crate::{sprint_summary::{ticket::TicketDetails, ticket_state::TicketState}, tracing::info};
+
+use super::TicketDetailsClient;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TrelloAttachment {
@@ -75,10 +77,6 @@ async fn fetch_trello_cards(client: &Client) -> Result<Vec<TrelloCard>, Error> {
     info!("Trello cards response body: {}", body);
 
     Ok(serde_json::from_str(&body).expect("Failed to parse Trello cards"))
-}
-
-pub trait TicketDetailsClient {
-    async fn fetch_ticket_details(&self) -> Result<Vec<TicketDetails>, Error>;
 }
 
 impl TicketDetailsClient for Client {

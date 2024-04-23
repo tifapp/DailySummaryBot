@@ -5,7 +5,7 @@ use crate::utils::slack_components::{link_element, text_element, user_element};
 use super::sprint_records::DailyTicketContext;
 use super::ticket_state::TicketState;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CheckRunDetails {
     pub name: String,
     pub details_url: String,
@@ -43,6 +43,7 @@ pub struct Ticket {
     pub added_in_sprint: String,
     pub added_on: String,
     pub last_moved_on: String,
+    pub out_of_sprint: bool,
     pub members: Vec<String>,
     pub details: TicketDetails,
     pub pr: Option<PullRequest>,
@@ -96,7 +97,7 @@ impl Ticket {
     }
 
     fn ticket_name_block(&self) -> Value {
-        link_element(&self.details.url, &self.annotated_ticket_name(), Some(json!({"bold": true, "strike": self.details.state == TicketState::BacklogIdeas})))
+        link_element(&self.details.url, &self.annotated_ticket_name(), Some(json!({"bold": true, "strike": self.out_of_sprint})))
     }    
 
     fn missing_assignees_warning(&self) -> Option<String> {
@@ -183,7 +184,7 @@ impl Ticket {
 
     fn pr_merge_status_block(&self, pr: &PullRequest) -> Value {
         if pr.merged {
-            text_element(" | Merged", None)
+            text_element(" | PR Merged ✔️", None)
         } else if pr.mergeable == Some(true) {
             text_element(" | Pending Merge", None)
         } else {
@@ -284,13 +285,14 @@ impl From<&DailyTicketContext> for Ticket {
             members: vec![],
             pr: None,
             sprint_age: 0,
+            out_of_sprint: true,
             added_in_sprint: record.added_in_sprint.clone(),
             added_on: record.added_on.clone(),
             last_moved_on: record.last_moved_on.clone(),
             details: TicketDetails {            
                 id: record.id.clone(),
                 name: record.name.clone(),
-                state: TicketState::BacklogIdeas,      
+                state: TicketState::InScope,      
                 url: record.url.clone(),                          
                 has_description: true,   
                 has_labels: true,                      
@@ -304,9 +306,26 @@ impl From<&DailyTicketContext> for Ticket {
     }
 }
 
+
 #[cfg(test)]
-mod tests {
-    use super::*;
+pub mod mocks {
+    use crate::sprint_summary::{ticket::TicketDetails, ticket_state::TicketState};
+
+    use super::{PullRequest, Ticket};
+    
+    impl Default for PullRequest {
+        fn default() -> Self {
+            PullRequest {
+                is_draft: false,
+                comments: 3,
+                merged: false,
+                mergeable: Some(true),
+                failing_check_runs: vec![],
+                state: "success".to_string(),
+                action_required_check_runs: vec![],
+            }
+        }
+    }
 
     impl Default for TicketDetails {
         fn default() -> Self {
@@ -326,29 +345,10 @@ mod tests {
         }
     }
     
-    impl Default for PullRequest {
-        fn default() -> Self {
-            PullRequest {
-                is_draft: false,
-                comments: 3,
-                merged: false,
-                mergeable: Some(true),
-                failing_check_runs: vec![CheckRunDetails {
-                    details_url: "http://example-check.com/2".to_string(),
-                    name: "CI Build Failing".to_string(),
-                }],
-                state: "success".to_string(),
-                action_required_check_runs: vec![CheckRunDetails {
-                    details_url: "http://example-check.com/1".to_string(),
-                    name: "CI Build Needing Action".to_string(),
-                }],
-            }
-        }
-    }
-
     impl Default for Ticket {
         fn default() -> Self {
             Ticket {
+                out_of_sprint: false,
                 sprint_age: 1,
                 added_on: "04/20/24".to_string(),
                 details: TicketDetails::default(),
@@ -359,6 +359,11 @@ mod tests {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     #[test]
     fn test_ticket_name_new_emoji_new() {
@@ -418,6 +423,23 @@ mod tests {
         ticket.details.is_goal = false;
         ticket.sprint_age = 0;
         assert_eq!(ticket.annotated_ticket_name(), "Mock Task");
+    }
+    
+    #[test]
+    fn test_ticket_name_block_deferred() {
+        let mut ticket = Ticket::default();
+        ticket.out_of_sprint = true;
+        let expected_blocks = json!({
+            "style": {
+                "bold": true,
+                "strike": true
+            },
+            "text": "🐌 Mock Task",
+            "type": "link",
+            "url": "http://example.com/mock_ticket"
+        });
+
+        assert_eq!(serde_json::to_value(ticket.ticket_name_block()).unwrap(), expected_blocks);
     }
     
     #[test]
@@ -658,7 +680,7 @@ mod tests {
         let ticket = Ticket::default();
         let expected = json!({
             "style": {},
-            "text": " | Merged",
+            "text": " | PR Merged ✔️",
             "type": "text"
         });
         assert_eq!(serde_json::to_value(ticket.pr_merge_status_block(&pr)).unwrap(), expected);
@@ -751,8 +773,6 @@ mod tests {
             {"type": "link", "text": "View PR", "url": "http://github.com/example", "style": {}},
             {"type": "text", "text": " | 3 💬", "style": {}},
             {"type": "text", "text": " | Pending Merge", "style": {}},
-            {"type": "text", "text": " | Failing check runs: ", "style": {}},
-            {"type": "link", "text": "CI Build Failing", "url": "http://example-check.com/2", "style": {"bold": true, "code": true}}
         ]);
 
         assert_eq!(serde_json::to_value(ticket.pr_blocks()).unwrap(), expected_blocks);

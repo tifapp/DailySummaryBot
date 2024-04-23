@@ -45,3 +45,5 @@ impl EventBridgeExtensions for Client {
         Ok(())
     }
 }
+
+//add a mock that simply saves/reads from a hashmap of values

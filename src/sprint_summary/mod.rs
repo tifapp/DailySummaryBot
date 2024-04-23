@@ -8,7 +8,6 @@ pub mod ticket_state;
 use std::collections::{HashMap, VecDeque};
 use std::env;
 use anyhow::{Result, anyhow};
-use lambda_runtime::tracing::info;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
@@ -21,8 +20,8 @@ use self::sprint_records::{
     CumulativeSprintContextClient, 
     CumulativeSprintContexts, 
     SprintMemberClient, 
-    LiveSprintContext, 
-    LiveSprintContextClient, 
+    ActiveSprintContext, 
+    ActiveSprintContextClient, 
     DailyTicketContextClient, 
     DailyTicketContexts
 };
@@ -48,14 +47,17 @@ pub trait SprintEventParser {
 }
 
 impl SprintContext {
+    //add unit test
     pub fn days_until_end(&self) -> u32 {
         days_between(None, &self.end_date).expect("Days until end should be parseable") as u32
     }
 
+    //add unit test
     pub fn total_days(&self) -> u32 {
         days_between(Some(&self.start_date), &self.end_date).expect("Total days should be parseable") as u32
     }
     
+    //add unit test
     pub fn time_indicator(&self) -> &str {
         let days_left = self.days_until_end() as f32;
         let total_days = self.total_days() as f32;
@@ -81,31 +83,31 @@ pub trait SprintEventMessageGenerator {
 }
 
 impl SprintEventMessageGenerator for SprintEvent {
+    //instead of hardcoding reqwest client, simply pass a struct with the ticketsummary trait
     async fn create_sprint_event_message(&self, fetch_client: &Client) -> Result<Vec<Value>> {
-        info!("Going to start making sprint message");
         let json_storage_client = create_json_storage_client().await;
-        info!("Made json sprint client");
         
+        //add mock data
         let previous_ticket_data = json_storage_client.get_ticket_data().await?.unwrap_or(DailyTicketContexts {
             tickets: VecDeque::new(),
         });
-        info!("Have previous ticket data");
         
+        //add mock data
         let user_mapping = json_storage_client.get_sprint_members().await?.unwrap_or(HashMap::new());
-        info!("Have user mapping");
         
+        //add mock data
         let mut historical_data = json_storage_client.get_historical_data().await?.unwrap_or(CumulativeSprintContexts {
             history: Vec::new(),
         });
 
         let mut ticket_summary = fetch_client.fetch_ticket_summary(&self.sprint_context.name, &historical_data, previous_ticket_data, user_mapping).await?;
-        info!("Have ticket summary");
         
         let trello_board_id = env::var("TRELLO_BOARD_ID").expect("TRELLO_BOARD_ID environment variable should exist");
         let board_link_block = context_block(&format!("<https://trello.com/b/{}|View sprint board>", trello_board_id));
         
         match self.sprint_command.as_str() {
             "/sprint-kickoff" => {
+                //add a unit test to validate the output message
                 let mut message_blocks = vec![
                     header_block(&format!("🔭 Sprint {} Preview: {} - {}", self.sprint_context.name, print_current_date(), self.sprint_context.end_date)),
                     section_block(&format!("*{} Tickets*\n*{:?} Days*", ticket_summary.open_ticket_count, days_between(Some(&print_current_date()), &self.sprint_context.end_date)?))
@@ -122,8 +124,10 @@ impl SprintEventMessageGenerator for SprintEvent {
                 Ok(message_blocks)
             },
             "/sprint-kickoff-confirm" => {
+                //add a unit test to validate the output message
+                //validate that data is saved to the mock hashmaps
                 json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
-                json_storage_client.put_sprint_data(&LiveSprintContext {
+                json_storage_client.put_sprint_data(&ActiveSprintContext {
                     end_date: self.sprint_context.end_date.clone(),
                     name: self.sprint_context.name.clone(),
                     channel_id: self.sprint_context.channel_id.to_string(),
@@ -144,6 +148,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 Ok(message_blocks)
             },
             "/sprint-check-in" => {
+                //add a unit test to validate the output message
                 let mut message_blocks = vec![
                     header_block(&format!("{} Sprint {} Check-In: {}", self.sprint_context.time_indicator(), self.sprint_context.name, print_current_date())),
                     section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint.", ticket_summary.open_ticket_count, ticket_summary.ticket_count, self.sprint_context.days_until_end())),
@@ -154,6 +159,8 @@ impl SprintEventMessageGenerator for SprintEvent {
                 Ok(message_blocks)
             },
             "/daily-trigger" => {
+                //add a unit test to validate the output message
+                //validate that data is saved to the mock hashmap
                 json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
 
                 let mut message_blocks = vec![
@@ -166,6 +173,8 @@ impl SprintEventMessageGenerator for SprintEvent {
                 Ok(message_blocks)
             },
             "/sprint-review" => {
+                //add a unit test to validate the output message with/without mock historical data
+                //validate that data is saved to the mock hashmaps
                 let eventbridge_client = create_eventbridge_client().await;
                 eventbridge_client.delete_daily_trigger_rule(&self.sprint_context.name).await?;
                 let sprint_data = json_storage_client.get_sprint_data().await?.expect("ongoing sprint should exist");
@@ -197,7 +206,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 
                 json_storage_client.put_historical_data(&historical_data).await?;
                 
-                ticket_summary.clear_completed_and_backlogged();
+                ticket_summary.clear_completed_and_deferred();
                 json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
 
                 Ok(message_blocks)

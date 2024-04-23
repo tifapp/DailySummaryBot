@@ -4,10 +4,10 @@ use lambda_runtime::LambdaEvent;
 use serde_json::Value;
 use crate::utils::{http::HttpRequest, s3::create_json_storage_client};
 use anyhow::{anyhow, Error, Result};
-use super::{sprint_records::{CumulativeSprintContextClient, CumulativeSprintContexts, LiveSprintContext, LiveSprintContextClient}, SprintContext, SprintEvent, SprintEventParser};
+use super::{sprint_records::{CumulativeSprintContextClient, CumulativeSprintContexts, ActiveSprintContext, ActiveSprintContextClient}, SprintContext, SprintEvent, SprintEventParser};
 
-impl From<&LiveSprintContext> for SprintContext {
-    fn from(record: &LiveSprintContext) -> Self {
+impl From<&ActiveSprintContext> for SprintContext {
+    fn from(record: &ActiveSprintContext) -> Self {
         SprintContext {
             start_date: record.start_date.clone(),
             end_date: record.end_date.clone(),
@@ -25,6 +25,7 @@ enum SprintEvents {
 }
 
 impl SprintEventParser for SprintEvents {
+    //how to unit test this?
     async fn try_into_sprint_event(self) -> Result<SprintEvent> {
         let json_client = create_json_storage_client().await;
 

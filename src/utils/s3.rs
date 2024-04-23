@@ -77,3 +77,5 @@ impl JsonStorageClient for Client {
         }
     }
 }
+
+//add a mock that simply saves/reads from a hashmap of json values

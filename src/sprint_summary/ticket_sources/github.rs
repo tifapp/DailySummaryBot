@@ -1,8 +1,10 @@
 use std::env;
 use serde::Deserialize;
-use anyhow::Result;
-use reqwest::{Client, Error};
+use anyhow::{Result, Error, anyhow};
+use reqwest::Client;
 use crate::{sprint_summary::ticket::{CheckRunDetails, PullRequest}, tracing::info};
+
+use super::PullRequestClient;
 
 #[derive(Deserialize)]
 struct GithubHead {
@@ -21,8 +23,7 @@ struct GithubPullRequest {
 #[derive(Deserialize, Debug)]
 struct GithubCheckRun {
     name: String,
-    conclusion: Option<String>, // "success", "failure", "neutral", "cancelled", "timed_out", "action_required", or null if still in progress
-    status: String, // "queued", "in_progress", or "completed"
+    conclusion: Option<String>,
     details_url: String,
 }
 
@@ -58,10 +59,6 @@ fn check_overall_status(check_runs: &GithubCheckRuns) -> (String, Vec<CheckRunDe
     };
 
     (state, failing_check_runs, action_required_check_runs)
-}
-
-pub trait PullRequestClient {
-    async fn fetch_pr_details(&self, pr_url: &str) -> Result<PullRequest, Error>;
 }
 
 impl PullRequestClient for Client {
@@ -120,7 +117,7 @@ impl PullRequestClient for Client {
             },
             Err(e) => {
                 // Handle other types of errors, e.g., network errors or non-403 HTTP errors
-                return Err(e);
+                return Err(anyhow!(e));
             }
         };
     
@@ -138,4 +135,98 @@ impl PullRequestClient for Client {
             }
         )
     }    
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_all_checks_succeed() {
+        let checks = GithubCheckRuns {
+            check_runs: vec![
+                GithubCheckRun {
+                    name: "Build".to_string(),
+                    details_url: "http://example.com/build".to_string(),
+                    conclusion: Some("success".to_string()),
+                },
+            ],
+        };
+
+        let (state, failing, action_required) = check_overall_status(&checks);
+        assert_eq!(state, "success");
+        assert!(failing.is_empty());
+        assert!(action_required.is_empty());
+    }
+
+    #[test]
+    fn test_some_checks_fail() {
+        let checks = GithubCheckRuns {
+            check_runs: vec![
+                GithubCheckRun {
+                    name: "Build".to_string(),
+                    details_url: "http://example.com/build".to_string(),
+                    conclusion: Some("failure".to_string()),
+                },
+            ],
+        };
+
+        let (state, failing, action_required) = check_overall_status(&checks);
+        assert_eq!(state, "failure");
+        assert_eq!(failing[0], CheckRunDetails { name: "Build".to_string(), details_url: "http://example.com/build".to_string() });
+        assert!(action_required.is_empty());
+    }
+
+    #[test]
+    fn test_some_checks_require_action() {
+        let checks = GithubCheckRuns {
+            check_runs: vec![
+                GithubCheckRun {
+                    name: "Deploy".to_string(),
+                    details_url: "http://example.com/deploy".to_string(),
+                    conclusion: None,
+                },
+            ],
+        };
+
+        let (state, failing, action_required) = check_overall_status(&checks);
+        assert_eq!(state, "action_required");
+        assert!(failing.is_empty());
+        assert_eq!(action_required[0], CheckRunDetails { name: "Deploy".to_string(), details_url: "http://example.com/deploy".to_string() });
+    }
+
+    #[test]
+    fn test_mixed_results() {
+        let checks = GithubCheckRuns {
+            check_runs: vec![
+                GithubCheckRun {
+                    name: "Build".to_string(),
+                    details_url: "http://example.com/build".to_string(),
+                    conclusion: Some("failure".to_string()),
+                },
+                GithubCheckRun {
+                    name: "Deploy".to_string(),
+                    details_url: "http://example.com/deploy".to_string(),
+                    conclusion: None,
+                },
+            ],
+        };
+
+        let (state, failing, action_required) = check_overall_status(&checks);
+        assert_eq!(state, "failure");
+        assert_eq!(failing[0], CheckRunDetails { name: "Build".to_string(), details_url: "http://example.com/build".to_string() });
+        assert_eq!(action_required[0], CheckRunDetails { name: "Deploy".to_string(), details_url: "http://example.com/deploy".to_string() });
+    }
+
+    #[test]
+    fn test_no_checks() {
+        let checks = GithubCheckRuns {
+            check_runs: vec![],
+        };
+
+        let (state, failing, action_required) = check_overall_status(&checks);
+        assert_eq!(state, "success");
+        assert!(failing.is_empty());
+        assert!(action_required.is_empty());
+    }
 }

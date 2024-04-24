@@ -58,8 +58,9 @@ impl From<Vec<Ticket>> for TicketSummary {
             } else if ticket.details.state <= TicketState::InScope || ticket.out_of_sprint {
                 if ticket.details.state == TicketState::InScope {
                     in_scope_ticket_count += 1;
+                } else {
+                    deferred_tickets.prioritized_push(ticket);
                 }
-                deferred_tickets.prioritized_push(ticket);
             } else {
                 open_ticket_count += 1;
                 match &ticket.pr {
@@ -360,6 +361,6 @@ mod tests {
         ]), "Open tickets should match");
         assert_eq!(summary_json["open_prs"], json!(vec![serde_json::to_value(&pr_open_ticket).unwrap()]), "Tickets with open PRs should match");
         assert_eq!(summary_json["blocked_prs"], json!(vec![serde_json::to_value(&pr_blocked_ticket_failing_checks).unwrap(), serde_json::to_value(&pr_blocked_ticket_not_mergable).unwrap()]), "Tickets with blocked PRs should match");
-        assert_eq!(summary_json["deferred_tickets"], json!(vec![serde_json::to_value(&in_scope_ticket).unwrap(), serde_json::to_value(&deferred_ticket).unwrap()]), "Deferred tickets should match");
+        assert_eq!(summary_json["deferred_tickets"], json!(vec![serde_json::to_value(&deferred_ticket).unwrap()]), "Deferred tickets should match");
     }
 }

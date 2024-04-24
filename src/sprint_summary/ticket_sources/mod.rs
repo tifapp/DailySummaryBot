@@ -4,6 +4,7 @@ mod trello;
 use std;
 use std::collections::HashMap;
 use anyhow::{Error, Result};
+use async_trait::async_trait;
 use crate::utils::date::print_current_date;
 use super::sprint_records::{CumulativeSprintContexts, DailyTicketContext, DailyTicketContexts};
 use super::ticket::{Ticket, TicketDetails, PullRequest};
@@ -25,7 +26,6 @@ struct TicketContext {
 }
 
 impl TicketContext {
-    //add unit test for if previous_version exists/doesnt exist
     fn new_context(ticket_details: &TicketDetails, previous_version: Option<&DailyTicketContext>, current_sprint_name: &str, historical_records: &CumulativeSprintContexts) -> Self {
         if let Some(previous) = previous_version {
             TicketContext {
@@ -49,10 +49,13 @@ impl TicketContext {
     }
 }
 
+
+#[async_trait(?Send)]
 pub trait TicketSummaryClient {
     async fn fetch_ticket_summary(&self, current_sprint_name: &str, historical_records: &CumulativeSprintContexts, previous_ticket_data: DailyTicketContexts, user_mapping: HashMap<String, String>) -> Result<TicketSummary>;
 }
 
+#[async_trait(?Send)]
 impl<T> TicketSummaryClient for T
 where
     T: TicketDetailsClient + PullRequestClient + Sync + Send {
@@ -231,7 +234,7 @@ pub mod ticket_summary_mocks {
 }
 #[cfg(test)]
 mod ticket_summary_tests {
-    use std::{collections::{HashMap, VecDeque}, hash::Hash};
+    use std::collections::{HashMap, VecDeque};
     use serde_json::json;
     use crate::sprint_summary::{sprint_records::{CumulativeSprintContexts, DailyTicketContext, DailyTicketContexts}, ticket::{PullRequest, Ticket, TicketDetails}, ticket_sources::{ticket_summary_mocks::{MockPullRequestClient, MockTicketDetailsClient, MockTicketSummaryClient}, TicketSummaryClient}};
     
@@ -287,7 +290,7 @@ mod ticket_summary_tests {
                 pr: None,
                 added_in_sprint: "Sprint 101".to_string(), 
                 added_on: "04/01/24".to_string(), 
-                last_moved_on: "04/23/24".to_string(), 
+                last_moved_on: "04/24/24".to_string(), 
                 sprint_age: 2,
                 ..Ticket::default()
             }).unwrap(),
@@ -302,7 +305,7 @@ mod ticket_summary_tests {
                   pr: Some(PullRequest::default()),
                   added_in_sprint: "Sprint 101".to_string(), 
                   added_on: "04/01/24".to_string(), 
-                  last_moved_on: "04/23/24".to_string(), 
+                  last_moved_on: "04/24/24".to_string(), 
                   sprint_age: 2,
                   ..Ticket::default()
               }).unwrap(),
@@ -315,7 +318,7 @@ mod ticket_summary_tests {
                   pr: Some(PullRequest { merged: true, ..PullRequest::default() }),
                   added_in_sprint: "Sprint 101".to_string(), 
                   added_on: "04/01/24".to_string(), 
-                  last_moved_on: "04/23/24".to_string(), 
+                  last_moved_on: "04/24/24".to_string(), 
                   sprint_age: 2,
                   ..Ticket::default()
               }).unwrap(),
@@ -330,7 +333,7 @@ mod ticket_summary_tests {
                 pr: Some(PullRequest { mergeable: None, ..PullRequest::default() }),
                 added_in_sprint: "Sprint 101".to_string(), 
                 added_on: "04/01/24".to_string(), 
-                last_moved_on: "04/23/24".to_string(), 
+                last_moved_on: "04/24/24".to_string(), 
                 sprint_age: 2,
                 ..Ticket::default()
             }).unwrap(),

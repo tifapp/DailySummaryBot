@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.81"
+async-trait = "0.1.80"
 aws-config = "1.1.10"
 aws-sdk-eventbridge = "1.19.0"
 aws-sdk-s3 = "1.22.0"

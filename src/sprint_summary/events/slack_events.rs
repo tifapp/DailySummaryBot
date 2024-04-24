@@ -21,15 +21,10 @@ impl TryFrom<&HttpRequest> for SlackSlashCommandBody {
     type Error = anyhow::Error;
 
     fn try_from(request: &HttpRequest) -> Result<Self, Self::Error> {
-        match &request.body {
-            Some(body_str) => {
-                serde_urlencoded::from_str(&body_str)
-                    .map_err(|e| {
-                        anyhow!("Error decoding URL-encoded body: {}", e)
-                    })
-            },
-            None => Err(anyhow!("No body to parse for SlackSlashCommandBody"))
-        }
+        serde_urlencoded::from_str(&request.body)
+            .map_err(|e| {
+                anyhow!("Error decoding URL-encoded body: {}", e)
+            })
     }
 }
 
@@ -90,24 +85,18 @@ impl TryFrom<&HttpRequest> for SlackBlockActionPayload {
     type Error = anyhow::Error;
 
     fn try_from(request: &HttpRequest) -> Result<Self, Self::Error> {
-        match &request.body {
-            Some(_) => {
-                let decoded_body = request.body.as_ref().ok_or_else(|| anyhow!("No body to parse for SlackBlockActionPayload"))?;
-                let decoded_map: HashMap<String, String> = serde_urlencoded::from_str(decoded_body)
-                    .map_err(|e| {
-                        anyhow!("Failed to decode url-encoded body: {}", e)
-                    })?;
+        let decoded_map: HashMap<String, String> = serde_urlencoded::from_str(&request.body)
+            .map_err(|e| {
+                anyhow!("Failed to decode url-encoded body: {}", e)
+            })?;
 
-                if let Some(json_str) = decoded_map.get("payload") {
-                    serde_json::from_str::<SlackBlockActionPayload>(json_str)
-                        .map_err(|e| {
-                            anyhow!("Failed to parse JSON body: {}", e)
-                        })
-                } else {
-                    Err(anyhow!("No 'payload' key found in decoded body"))
-                } 
-            },
-            None => Err(anyhow!("No body to parse for SlackSlashCommandBody"))
+        if let Some(json_str) = decoded_map.get("payload") {
+            serde_json::from_str::<SlackBlockActionPayload>(json_str)
+                .map_err(|e| {
+                    anyhow!("Failed to parse JSON body: {}", e)
+                })
+        } else {
+            Err(anyhow!("No 'payload' key found in decoded body"))
         }
     }
 }

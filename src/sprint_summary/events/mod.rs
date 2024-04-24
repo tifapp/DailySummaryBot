@@ -2,9 +2,9 @@ mod slack_events;
 
 use lambda_runtime::LambdaEvent;
 use serde_json::Value;
-use crate::utils::{http::HttpRequest, s3::create_json_storage_client};
+use crate::utils::http::HttpRequest;
 use anyhow::{anyhow, Error, Result};
-use super::{sprint_records::{CumulativeSprintContextClient, CumulativeSprintContexts, ActiveSprintContext, ActiveSprintContextClient}, SprintContext, SprintEvent, SprintEventParser};
+use super::{sprint_records::{ActiveSprintContext, CumulativeSprintContexts, SprintClient}, SprintContext, SprintEvent, SprintEventParser};
 
 impl From<&ActiveSprintContext> for SprintContext {
     fn from(record: &ActiveSprintContext) -> Self {
@@ -25,11 +25,12 @@ enum SprintEvents {
 }
 
 impl SprintEventParser for SprintEvents {
-    //how to unit test this?
-    async fn try_into_sprint_event(self) -> Result<SprintEvent> {
-        let json_client = create_json_storage_client().await;
-
-        match json_client.get_sprint_data().await {
+    //unit test all branches
+    async fn try_into_sprint_event<'a>(
+        &self, 
+        sprint_client: &'a dyn SprintClient
+    ) -> Result<SprintEvent> {
+        match sprint_client.get_sprint_data().await {
             Ok(Some(active_sprint_record)) => {
                 match self {
                     SprintEvents::SprintPreview(_) | SprintEvents::SprintKickoff(_) => {
@@ -60,7 +61,7 @@ impl SprintEventParser for SprintEvents {
             Ok(None) => {
                 match self {
                     SprintEvents::SprintPreview(sprint_event) | SprintEvents::SprintKickoff(sprint_event) => {
-                        let history = json_client.get_historical_data().await?.unwrap_or(CumulativeSprintContexts {
+                        let history = sprint_client.get_historical_data().await?.unwrap_or(CumulativeSprintContexts {
                             history: Vec::new(),
                         });
 
@@ -68,7 +69,7 @@ impl SprintEventParser for SprintEvents {
                             return Err(anyhow!("Sprint name {} was already used", sprint_event.sprint_context.name));
                         }
 
-                        Ok(sprint_event)
+                        Ok(sprint_event.clone())
                     },
                     _ => Err(anyhow!("No active sprint data available for this operation")),
                 }
@@ -79,11 +80,11 @@ impl SprintEventParser for SprintEvents {
 }
 
 trait MapToSprintEvents {
-    fn try_into_sprint_events(self) -> Result<SprintEvents, Error>;
+    fn try_into_sprint_events(&self) -> Result<SprintEvents, Error>;
 }
 
 impl MapToSprintEvents for LambdaEvent<Value> {
-    fn try_into_sprint_events(self) -> Result<SprintEvents, Error> {
+    fn try_into_sprint_events(&self) -> Result<SprintEvents, Error> {
         let request_result: Result<HttpRequest, Error> = self.try_into();
 
         match request_result {
@@ -98,10 +99,124 @@ impl MapToSprintEvents for LambdaEvent<Value> {
 }
 
 impl SprintEventParser for LambdaEvent<Value> {
-    async fn try_into_sprint_event(self) -> Result<SprintEvent> {
+    async fn try_into_sprint_event<'a>(&self, sprint_client: &'a dyn SprintClient) -> Result<SprintEvent> {
         match self.try_into_sprint_events() {
-            Ok(sprint_events) => sprint_events.try_into_sprint_event().await,
+            Ok(sprint_events) => sprint_events.try_into_sprint_event(sprint_client).await,
             Err(e) => Err(e),
         }
+    }
+}
+
+#[cfg(test)]
+mod sprint_event_tests {
+    use crate::{sprint_summary::sprint_records::mocks::MockSprintClient, utils::date::print_current_date};
+    use super::*;
+    use anyhow::anyhow;
+
+    #[tokio::test]
+    async fn test_sprint_preview_with_active_sprint() {
+        let mock_client = MockSprintClient::new(Some(ActiveSprintContext::default()), None, None);
+        let event = SprintEvents::SprintPreview(SprintEvent {
+            response_url: None,
+            sprint_command: "/sprint-preview".to_string(),
+            sprint_context: (&ActiveSprintContext::default()).into(),
+        });
+
+        let result = event.try_into_sprint_event(&mock_client).await;
+        assert!(result.is_err());
+        assert_eq!(format!("{}", result.unwrap_err()), format!("Sprint {} already in progress", "Sprint 1"));
+    }
+
+    #[tokio::test]
+    async fn test_sprint_checkin_with_active_sprint() {
+        let mock_client = MockSprintClient::new(Some(ActiveSprintContext::default()), None, None);
+        let event = SprintEvents::SprintCheckIn;
+
+        let result = event.try_into_sprint_event(&mock_client).await.unwrap();
+        assert_eq!(result.sprint_command, "/sprint-check-in");
+        assert_eq!(result.sprint_context.name, "Sprint 1");
+    }
+
+    #[tokio::test]
+    async fn test_daily_summary_with_no_active_sprint() {
+        let mock_client = MockSprintClient::new(None, None, None);
+        let event = SprintEvents::DailySummary;
+
+        let result = event.try_into_sprint_event(&mock_client).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_sprint_kickoff_with_used_name() {
+        let mock_client = MockSprintClient::new(None, Some(CumulativeSprintContexts::default()), None);
+        let event = SprintEvents::SprintKickoff(SprintEvent {
+            response_url: None,
+            sprint_command: "/sprint-kickoff".to_string(),
+            sprint_context: (&ActiveSprintContext::default()).into(),
+        });
+
+        let result = event.try_into_sprint_event(&mock_client).await;
+        assert!(result.is_err());
+        assert_eq!(format!("{}", result.unwrap_err()), "Sprint name Sprint 1 was already used");
+    }
+
+    #[tokio::test]
+    async fn test_sprint_kickoff_without_active_sprint_and_no_name_conflict() {
+        let mock_client = MockSprintClient::new(None, Some(CumulativeSprintContexts {history: vec![]}), None);
+        let event = SprintEvents::SprintKickoff(SprintEvent {
+            response_url: None,
+            sprint_command: "/sprint-kickoff".to_string(),
+            sprint_context: SprintContext {
+                start_date: "02/01/22".to_string(),
+                end_date: "02/15/22".to_string(),
+                name: "New Sprint".to_string(),
+                channel_id: "C789123".to_string(),
+            },
+        });
+
+        let result = event.try_into_sprint_event(&mock_client).await.unwrap();
+        assert_eq!(result.sprint_command, "/sprint-kickoff");
+        assert_eq!(result.sprint_context.name, "New Sprint");
+    }
+
+    #[tokio::test]
+    async fn test_daily_summary_with_active_sprint() {
+        let mock_client = MockSprintClient::new(Some(ActiveSprintContext::default()), None, None);
+        let event = SprintEvents::DailySummary;
+
+        let result = event.try_into_sprint_event(&mock_client).await;
+        assert!(result.is_ok());
+        let sprint_event = result.unwrap();
+        assert_eq!(sprint_event.sprint_command, "/daily-summary");
+        assert_eq!(sprint_event.sprint_context.name, "Sprint 1");
+    }
+
+    #[tokio::test]
+    async fn test_sprint_checkin_without_active_sprint() {
+        let mock_client = MockSprintClient::new(None, None, None);
+        let event = SprintEvents::SprintCheckIn;
+
+        let result = event.try_into_sprint_event(&mock_client).await;
+        assert!(result.is_err());
+        assert_eq!(format!("{}", result.unwrap_err()), "No active sprint data available for this operation");
+    }
+
+    #[tokio::test]
+    async fn test_daily_summary_with_active_sprint_last_day() {
+        let active_context = ActiveSprintContext {
+            name: "Sprint 1".to_string(),
+            start_date: "01/01/22".to_string(),
+            end_date: print_current_date(),
+            channel_id: "C123456".to_string(),
+            trello_board: "Board123".to_string(),
+            open_tickets_count_beginning: 10,
+            in_scope_tickets_count_beginning: 5,
+        };
+        let mock_client = MockSprintClient::new(Some(active_context), None, None);
+        let event = SprintEvents::DailySummary;
+
+        let result = event.try_into_sprint_event(&mock_client).await.unwrap();
+        assert_eq!(result.sprint_command, "/sprint-review");
+        assert_eq!(result.sprint_context.name, "Sprint 1");
     }
 }

@@ -56,7 +56,7 @@ impl JsonStorageClient for Client {
             Ok(data) => data,
             Err(e) => {
                 error!("Failed to fetch object from S3: {}", e);
-                return Ok(None);  // Log the error and return None
+                return Ok(None);
             }
         };
     
@@ -64,18 +64,16 @@ impl JsonStorageClient for Client {
             Ok(bytes) => bytes,
             Err(e) => {
                 error!("Failed to read object data: {}", e);
-                return Ok(None);  // Log the error and return None
+                return Ok(None);
             }
         };
     
         match serde_json::from_slice::<Value>(&data.into_bytes()) {
-            Ok(json) => Ok(Some(json)),  // Successfully parsed JSON
+            Ok(json) => Ok(Some(json)),
             Err(e) => {
                 error!("Failed to parse JSON data: {}", e);
-                Ok(None)  // Log the error and return None
+                Ok(None)
             }
         }
     }
 }
-
-//add a mock that simply saves/reads from a hashmap of json values

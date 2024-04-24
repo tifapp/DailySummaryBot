@@ -13,21 +13,13 @@ use serde::Deserialize;
 use serde_json::Value;
 use crate::utils::date::{days_between, print_current_date};
 use crate::utils::eventbridge::{create_eventbridge_client, EventBridgeExtensions};
-use crate::utils::s3::create_json_storage_client;
 use crate::utils::slack_components::{context_block, header_block, primary_button_block, section_block};
 use self::sprint_records::{
-    CumulativeSprintContext, 
-    CumulativeSprintContextClient, 
-    CumulativeSprintContexts, 
-    SprintMemberClient, 
-    ActiveSprintContext, 
-    ActiveSprintContextClient, 
-    DailyTicketContextClient, 
-    DailyTicketContexts
+    ActiveSprintContext, CumulativeSprintContext, CumulativeSprintContexts, DailyTicketContexts, SprintClient,
 };
 use self::ticket_sources::TicketSummaryClient;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct SprintContext {
     pub channel_id: String,
     pub start_date: String,
@@ -35,7 +27,7 @@ pub struct SprintContext {
     pub name: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct SprintEvent {
     pub sprint_command: String,
     pub response_url: Option<String>,
@@ -43,7 +35,10 @@ pub struct SprintEvent {
 }
 
 pub trait SprintEventParser {
-    async fn try_into_sprint_event(self) -> Result<SprintEvent>;
+    async fn try_into_sprint_event<'a>(
+        &self, 
+        sprint_client: &'a dyn SprintClient
+    ) -> Result<SprintEvent>;
 }
 
 impl SprintContext {
@@ -79,32 +74,35 @@ impl SprintContext {
 }
 
 pub trait SprintEventMessageGenerator {
-    async fn create_sprint_event_message(&self, fetch_client: &Client) -> Result<Vec<Value>>;
+    async fn create_sprint_event_message<'a>(
+        &self, 
+        fetch_client: &dyn TicketSummaryClient,
+        sprint_client: &'a dyn SprintClient
+    ) -> Result<Vec<Value>>;
 }
 
 impl SprintEventMessageGenerator for SprintEvent {
-    //instead of hardcoding reqwest client, simply pass a struct with the ticketsummary trait
-    async fn create_sprint_event_message(&self, fetch_client: &Client) -> Result<Vec<Value>> {
-        let json_storage_client = create_json_storage_client().await;
-        
-        //add mock data
-        let previous_ticket_data = json_storage_client.get_ticket_data().await?.unwrap_or(DailyTicketContexts {
+    async fn create_sprint_event_message<'a>(
+        &self, 
+        fetch_client: &dyn TicketSummaryClient,
+        sprint_client: &'a dyn SprintClient
+    ) -> Result<Vec<Value>> {      
+        let previous_ticket_data = sprint_client.get_ticket_data().await?.unwrap_or(DailyTicketContexts {
             tickets: VecDeque::new(),
         });
         
-        //add mock data
-        let user_mapping = json_storage_client.get_sprint_members().await?.unwrap_or(HashMap::new());
+        let user_mapping = sprint_client.get_sprint_members().await?.unwrap_or(HashMap::new());
         
-        //add mock data
-        let mut historical_data = json_storage_client.get_historical_data().await?.unwrap_or(CumulativeSprintContexts {
+        let mut historical_data = sprint_client.get_historical_data().await?.unwrap_or(CumulativeSprintContexts {
             history: Vec::new(),
         });
 
         let mut ticket_summary = fetch_client.fetch_ticket_summary(&self.sprint_context.name, &historical_data, previous_ticket_data, user_mapping).await?;
         
-        let trello_board_id = env::var("TRELLO_BOARD_ID").expect("TRELLO_BOARD_ID environment variable should exist");
+        let trello_board_id = env::var("TRELLO_BOARD_ID").unwrap_or("TRELLO_BOARD_ID needs to exist".to_owned());
         let board_link_block = context_block(&format!("<https://trello.com/b/{}|View sprint board>", trello_board_id));
         
+        //add unit test for running multiple commands in sequence
         match self.sprint_command.as_str() {
             "/sprint-kickoff" => {
                 //add a unit test to validate the output message
@@ -114,7 +112,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 ];
                 message_blocks.extend(ticket_summary.into_slack_blocks());
                 message_blocks.extend(
-                    json_storage_client.get_historical_data().await?.unwrap_or_else(|| CumulativeSprintContexts {
+                    sprint_client.get_historical_data().await?.unwrap_or_else(|| CumulativeSprintContexts {
                         history: Vec::new(),
                     })
                     .into_slack_blocks()
@@ -126,8 +124,8 @@ impl SprintEventMessageGenerator for SprintEvent {
             "/sprint-kickoff-confirm" => {
                 //add a unit test to validate the output message
                 //validate that data is saved to the mock hashmaps
-                json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
-                json_storage_client.put_sprint_data(&ActiveSprintContext {
+                sprint_client.put_ticket_data(&(&ticket_summary).into()).await?;
+                sprint_client.put_sprint_data(&ActiveSprintContext {
                     end_date: self.sprint_context.end_date.clone(),
                     name: self.sprint_context.name.clone(),
                     channel_id: self.sprint_context.channel_id.to_string(),
@@ -161,7 +159,7 @@ impl SprintEventMessageGenerator for SprintEvent {
             "/daily-trigger" => {
                 //add a unit test to validate the output message
                 //validate that data is saved to the mock hashmap
-                json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
+                sprint_client.put_ticket_data(&(&ticket_summary).into()).await?;
 
                 let mut message_blocks = vec![
                     header_block(&format!("{} Daily Summary: {}", self.sprint_context.time_indicator(), print_current_date())),
@@ -177,19 +175,36 @@ impl SprintEventMessageGenerator for SprintEvent {
                 //validate that data is saved to the mock hashmaps
                 let eventbridge_client = create_eventbridge_client().await;
                 eventbridge_client.delete_daily_trigger_rule(&self.sprint_context.name).await?;
-                let sprint_data = json_storage_client.get_sprint_data().await?.expect("ongoing sprint should exist");
-                json_storage_client.clear_sprint_data().await?;
+                let sprint_data = sprint_client.get_sprint_data().await?.expect("ongoing sprint should exist");
+                sprint_client.clear_sprint_data().await?;
 
-                let open_tickets_added_count = ticket_summary.open_ticket_count - sprint_data.open_tickets_count_beginning;
-                let tickets_added_to_scope_count = ticket_summary.in_scope_ticket_count - sprint_data.in_scope_tickets_count_beginning;
+                let open_tickets_added_count = ticket_summary.open_ticket_count as i32 - sprint_data.open_tickets_count_beginning as i32;
+                let tickets_added_to_scope_count = ticket_summary.in_scope_ticket_count as i32 - sprint_data.in_scope_tickets_count_beginning as i32;
 
                 let mut message_blocks = vec![
                     header_block(&format!("🎆 Sprint {} Review: {} - {}", self.sprint_context.name, print_current_date(), self.sprint_context.end_date)),
                     header_block(&format!("\n*{}/{} Tickets* Completed in {} Days*", ticket_summary.completed_tickets.len(), ticket_summary.ticket_count, self.sprint_context.total_days())),
                     header_block(&format!("\n*{:.2}% of tasks completed.*", ticket_summary.completed_percentage)),
-                    header_block(&format!("\n{} tickets added to sprint", open_tickets_added_count)), //hide if 0 or show "removed" if negative
-                    header_block(&format!("\n{} tickets added to scope", tickets_added_to_scope_count)), //hide if 0 or show "removed" if negative
                 ];
+                
+                if open_tickets_added_count != 0 {
+                    let tickets_added_label = if open_tickets_added_count < 0 {
+                        "removed"
+                    } else {
+                        "added to sprint"
+                    };
+                    message_blocks.push(header_block(&format!("\n{} tickets {}", open_tickets_added_count.abs(), tickets_added_label)));
+                }
+
+                if tickets_added_to_scope_count != 0 {
+                    let tickets_added_scope_label = if tickets_added_to_scope_count < 0 {
+                        "removed from scope"
+                    } else {
+                        "added to scope"
+                    };
+                    message_blocks.push(header_block(&format!("\n{} tickets {}", tickets_added_to_scope_count.abs(), tickets_added_scope_label)));
+                }
+
                 message_blocks.extend(ticket_summary.into_slack_blocks());
                 message_blocks.extend(historical_data.into_slack_blocks());
                 message_blocks.push(board_link_block);
@@ -204,14 +219,134 @@ impl SprintEventMessageGenerator for SprintEvent {
                     tickets_added_to_scope_count
                 });
                 
-                json_storage_client.put_historical_data(&historical_data).await?;
+                sprint_client.put_historical_data(&historical_data).await?;
                 
                 ticket_summary.clear_completed_and_deferred();
-                json_storage_client.put_ticket_data(&(&ticket_summary).into()).await?;
+                sprint_client.put_ticket_data(&(&ticket_summary).into()).await?;
 
                 Ok(message_blocks)
             },
             _ => Err(anyhow!("Unsupported command '{:?}'", self.sprint_command))
         }
+    }
+}
+
+#[cfg(test)]
+mod sprint_event_message_generator_tests {
+    use self::ticket_sources::ticket_summary_mocks::{MockPullRequestClient, MockTicketDetailsClient, MockTicketSummaryClient};
+
+    use super::*;
+    use crate::sprint_summary::sprint_records::mocks::MockSprintClient;
+    use sprint_event_message_generator_tests::sprint_records::ActiveSprintContextClient;
+    use std::env;
+    use tokio::runtime::Runtime;
+    
+    impl Default for SprintContext {
+        fn default() -> Self {
+            SprintContext {
+                channel_id: "AKJFFKOL".to_string(),
+                start_date: "02/20/23".to_string(),
+                end_date: "02/30/23".to_string(),
+                name: "test sprint 190".to_string()
+            }
+        }
+    }
+
+    // Helper function to create a runtime to execute async tests
+    fn test_runtime() -> Runtime {
+        Runtime::new().unwrap()
+    }
+
+    #[test]
+    fn test_sprint_kickoff_message() {
+        let rt = test_runtime();
+        let client = MockTicketSummaryClient::new(
+            MockTicketDetailsClient::new(vec![]),
+            MockPullRequestClient::new(HashMap::new())
+        );
+        let mock_client = MockSprintClient::new(Some(ActiveSprintContext::default()), Some(CumulativeSprintContexts::default()), None);
+        let event = SprintEvent {
+            sprint_command: "/sprint-kickoff".to_string(),
+            response_url: None,
+            sprint_context: SprintContext::default(),
+        };
+
+        rt.block_on(async {
+            let result = event.create_sprint_event_message(&client, &mock_client).await.unwrap();
+            assert!(result.iter().any(|block| block.to_string().contains("Sprint Kickoff")));
+            assert!(result.iter().any(|block| block.to_string().contains("View sprint board")));
+        });
+    }
+
+    #[test]
+    fn test_sprint_kickoff_confirm_saves_data() {
+        let rt = test_runtime();
+        let client = MockTicketSummaryClient::new(
+            MockTicketDetailsClient::new(vec![]),
+            MockPullRequestClient::new(HashMap::new())
+        );
+        let mock_client = MockSprintClient::new(None, None, None);
+        let event = SprintEvent {
+            sprint_command: "/sprint-kickoff-confirm".to_string(),
+            response_url: None,
+            sprint_context: SprintContext::default(),
+        };
+
+        rt.block_on(async {
+            let result = event.create_sprint_event_message(&client, &mock_client).await.unwrap();
+            assert!(result.iter().any(|block| block.to_string().contains("Sprint starts now!")));
+            assert!(mock_client.get_sprint_data().await.unwrap().is_some());
+        });
+    }
+
+    #[test]
+    fn test_sprint_review_with_historical_data() {
+        let rt = test_runtime();
+        env::set_var("TRELLO_BOARD_ID", "TestBoardID");
+        let client = MockTicketSummaryClient::new(
+            MockTicketDetailsClient::new(vec![]),
+            MockPullRequestClient::new(HashMap::new())
+        );
+        let mock_client = MockSprintClient::new(Some(ActiveSprintContext::default()), None, None);
+        let event = SprintEvent {
+            sprint_command: "/sprint-review".to_string(),
+            response_url: None,
+            sprint_context: SprintContext::default(),
+        };
+
+        rt.block_on(async {
+            let result = event.create_sprint_event_message(&client, &mock_client).await.unwrap();
+            assert!(result.iter().any(|block| block.to_string().contains("Sprint Review:")));
+            assert!(result.iter().any(|block| block.to_string().contains("tickets added to sprint")));
+            assert!(mock_client.get_sprint_data().await.unwrap().is_none());
+        });
+    }
+
+    #[test]
+    fn test_daily_summary_output() {
+        let rt = test_runtime();
+        let client = MockTicketSummaryClient::new(
+            MockTicketDetailsClient::new(vec![]),
+            MockPullRequestClient::new(HashMap::new())
+        );
+        let mock_client = MockSprintClient::new(Some(ActiveSprintContext {
+            name: "Sprint 101".to_string(),
+            start_date: "2023-01-01".to_string(),
+            end_date: "2023-01-15".to_string(),
+            channel_id: "C123456".to_string(),
+            trello_board: "Board123".to_string(),
+            open_tickets_count_beginning: 10,
+            in_scope_tickets_count_beginning: 5,
+        }), None, None);
+        let event = SprintEvent {
+            sprint_command: "/daily-trigger".to_string(),
+            response_url: None,
+            sprint_context: SprintContext::default(),
+        };
+
+        rt.block_on(async {
+            let result = event.create_sprint_event_message(&client, &mock_client).await.unwrap();
+            assert!(result.iter().any(|block| block.to_string().contains("Daily Summary")));
+        });
     }
 }

@@ -1,1 +1,33 @@
-A lambda to facilitate agile development
+# Sprint Management Bot README
+
+## Purpose
+The Sprint Management Bot is designed to enhance agile development practices by focusing on key areas such as efficiency, scope control, and velocity measurement. This tool aims to:
+
+- Resolve blockers quickly, especially in pull requests, to maintain momentum in development cycles.
+- Simplify the measurement of scope and velocity, making it easier for teams to track and adjust their progress.
+- Deliver clear, concise, and frequent updates on sprint performance, allowing us to better plan milestones, improving our scoping and task commitment skills, and providing further encouragement for consistent progress.
+
+## Ticket States
+These are the current enumerated stages for our ticket development:
+
+- **In Scope**: Tickets within the scope of the next production release. Committed to for the production release.
+- **Investigation/Discussion**: Tickets within the scope of the active sprint. Ticket descriptions & deliverable plans are worked out in this stage. Ticket assignees are required for this stage.
+- **In Progress**: Tickets are actively being worked on and/or being updated after reviews. Ticket descriptions and labels are necessary for this stage.
+- **Pending Release**: Tickets awaiting further review/approval. They remain in this stage until merged into the next development release. A pull request (PR) is required for this stage.
+- **Demo/Final Approval**: Tickets ready for demonstration.
+- **Done**: Tickets approved and integrated into the next release.
+
+## Features
+- **Activity Indicators**: Tracks the duration for which tickets remain active.
+- **Blocked PR Indicators**: Highlights PRs that are blocked, facilitating quicker resolutions.
+- **Cumulative Sprint Records**: Maintains records of sprint completion percentages and the number of tickets completed.
+- **Missing Information Warnings**: Alerts for tickets lacking necessary information.
+- **Scope Increase Indicators**: Monitors and reports on new tickets added during the sprint.
+- **Daily Summaries**: Provides a formatted daily summary of sprint progress and blockers.
+- **Priority Flags**: Enables ticket prioritization by marking goal-critical tickets.
+- **Interactive Commands**: Supports commands such as `/sprint-kickoff` for starting sprints and checking progress.
+
+## Usage Details
+- **Sprint Kickoff**: Initiate sprints by issuing the `/sprint-kickoff` command in Slack, which previews the upcoming sprint based on the current Trello board state. Pressing the "Kick Off" button starts the sprint.
+- **Daily Reports**: Every day at 7 PM, a daily report summarizing the sprint's progress is posted to the designated Slack channel.
+- **Sprint Review**: At the end of each sprint, a sprint report is generated, detailing the number/percentage of tickets completed and providing insights from past sprints.

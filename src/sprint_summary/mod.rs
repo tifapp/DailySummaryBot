@@ -138,7 +138,8 @@ impl SprintEventMessageGenerator for SprintEvent {
                 eventbridge_client.create_daily_trigger_rule(&self.sprint_context.name).await?;
 
                 let mut message_blocks = vec![
-                    header_block(&format!("🚀 Sprint {} Kickoff: {} - {}\nSprint starts now!", self.sprint_context.name, print_current_date(), self.sprint_context.end_date)),
+                    header_block(&format!("🚀 Sprint {} Kickoff: {} - {}", self.sprint_context.name, print_current_date(), self.sprint_context.end_date)),
+                    section_block("\nSprint starts now!"),
                     section_block(&format!("*{} Tickets*\n*{:?} Days*", ticket_summary.open_ticket_count, days_between(Some(&print_current_date()), &self.sprint_context.end_date)?))
                 ];
                 message_blocks.extend(ticket_summary.into_slack_blocks());

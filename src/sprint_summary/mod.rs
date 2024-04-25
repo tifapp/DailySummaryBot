@@ -131,7 +131,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                     channel_id: self.sprint_context.channel_id.to_string(),
                     start_date: print_current_date(),
                     open_tickets_count_beginning: ticket_summary.open_ticket_count,
-                    in_scope_tickets_count_beginning: ticket_summary.in_scope_ticket_count,
+                    in_scope_tickets_count_beginning: ticket_summary.in_sprint_scope_ticket_count,
                     trello_board: env::var("TRELLO_BOARD_ID").expect("TRELLO_BOARD_ID environment variable should exist") //TODO: parameterize
                 }).await?;
                 let eventbridge_client = create_eventbridge_client().await;
@@ -150,7 +150,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 //add a unit test to validate the output message
                 let mut message_blocks = vec![
                     header_block(&format!("{} Sprint {} Check-In: {}", self.sprint_context.time_indicator(), self.sprint_context.name, print_current_date())),
-                    section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint.", ticket_summary.open_ticket_count, ticket_summary.ticket_count, self.sprint_context.days_until_end())),
+                    section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint.", ticket_summary.open_ticket_count, ticket_summary.in_sprint_scope_ticket_count, self.sprint_context.days_until_end())),
                     section_block(&format!("\n*{:.2}% of tasks completed.*", ticket_summary.completed_percentage))
                 ];
                 message_blocks.extend(ticket_summary.into_slack_blocks());
@@ -164,11 +164,12 @@ impl SprintEventMessageGenerator for SprintEvent {
 
                 let mut message_blocks = vec![
                     header_block(&format!("{} Daily Summary: {}", self.sprint_context.time_indicator(), print_current_date())),
-                    section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint.", ticket_summary.open_ticket_count, ticket_summary.ticket_count, self.sprint_context.days_until_end())),
+                    section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint.", ticket_summary.open_ticket_count, ticket_summary.in_sprint_scope_ticket_count, self.sprint_context.days_until_end())),
                     section_block(&format!("\n*{:.2}% of tasks completed.*", ticket_summary.completed_percentage))
                 ];
                 message_blocks.extend(ticket_summary.into_slack_blocks());
                 message_blocks.push(board_link_block);
+                //sdend trtello request to change board name
                 Ok(message_blocks)
             },
             "/sprint-review" => {
@@ -180,11 +181,11 @@ impl SprintEventMessageGenerator for SprintEvent {
                 sprint_client.clear_sprint_data().await?;
 
                 let open_tickets_added_count = ticket_summary.open_ticket_count as i32 - sprint_data.open_tickets_count_beginning as i32;
-                let tickets_added_to_scope_count = ticket_summary.in_scope_ticket_count as i32 - sprint_data.in_scope_tickets_count_beginning as i32;
+                let tickets_added_to_scope_count = ticket_summary.in_sprint_scope_ticket_count as i32 - sprint_data.in_scope_tickets_count_beginning as i32;
 
                 let mut message_blocks = vec![
                     header_block(&format!("🎆 Sprint {} Review: {} - {}", self.sprint_context.name, print_current_date(), self.sprint_context.end_date)),
-                    header_block(&format!("\n*{}/{} Tickets* Completed in {} Days*", ticket_summary.completed_tickets.len(), ticket_summary.ticket_count, self.sprint_context.total_days())),
+                    header_block(&format!("\n*{}/{} Tickets* Completed in {} Days*", ticket_summary.completed_tickets.len(), ticket_summary.in_sprint_scope_ticket_count, self.sprint_context.total_days())),
                     header_block(&format!("\n*{:.2}% of tasks completed.*", ticket_summary.completed_percentage)),
                 ];
                 
@@ -222,6 +223,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 
                 sprint_client.put_historical_data(&historical_data).await?;
                 
+                //send request to trello to move completed tickets to garbage bin
                 ticket_summary.clear_completed_and_deferred();
                 sprint_client.put_ticket_data(&(&ticket_summary).into()).await?;
 

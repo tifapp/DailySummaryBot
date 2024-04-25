@@ -157,7 +157,7 @@ impl SprintEventMessageGenerator for SprintEvent {
                 message_blocks.push(board_link_block);
                 Ok(message_blocks)
             },
-            "/daily-trigger" => {
+            "/daily-summary" => {
                 //add a unit test to validate the output message
                 //validate that data is saved to the mock hashmap
                 sprint_client.put_ticket_data(&(&ticket_summary).into()).await?;
@@ -342,7 +342,7 @@ mod sprint_event_message_generator_tests {
             in_scope_tickets_count_beginning: 5,
         }), None, None);
         let event = SprintEvent {
-            sprint_command: "/daily-trigger".to_string(),
+            sprint_command: "/daily-summary".to_string(),
             response_url: None,
             sprint_context: SprintContext::default(),
         };

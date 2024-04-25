@@ -21,7 +21,7 @@ enum SprintEvents {
     SprintPreview(SprintEvent),
     SprintKickoff(SprintEvent),
     SprintCheckIn,
-    DailySummary,
+    ScheduledTrigger,
 }
 
 impl SprintEventParser for SprintEvents {
@@ -43,7 +43,7 @@ impl SprintEventParser for SprintEvents {
                             sprint_context: (&active_sprint_record).into(),
                         })
                     },
-                    SprintEvents::DailySummary => {
+                    SprintEvents::ScheduledTrigger => {
                         let sprint_context: SprintContext = (&active_sprint_record).into();
                         
                         Ok(SprintEvent {
@@ -92,7 +92,7 @@ impl MapToSprintEvents for LambdaEvent<Value> {
                 Ok((&request).try_into().expect("should convert into SprintEvents"))
             },
             Err(_) => {
-                Ok(SprintEvents::DailySummary)
+                Ok(SprintEvents::ScheduledTrigger)
             }
         }
     }
@@ -140,7 +140,7 @@ mod sprint_event_tests {
     #[tokio::test]
     async fn test_daily_summary_with_no_active_sprint() {
         let mock_client = MockSprintClient::new(None, None, None);
-        let event = SprintEvents::DailySummary;
+        let event = SprintEvents::ScheduledTrigger;
 
         let result = event.try_into_sprint_event(&mock_client).await;
         assert!(result.is_err());
@@ -182,7 +182,7 @@ mod sprint_event_tests {
     #[tokio::test]
     async fn test_daily_summary_with_active_sprint() {
         let mock_client = MockSprintClient::new(Some(ActiveSprintContext::default()), None, None);
-        let event = SprintEvents::DailySummary;
+        let event = SprintEvents::ScheduledTrigger;
 
         let result = event.try_into_sprint_event(&mock_client).await;
         assert!(result.is_ok());

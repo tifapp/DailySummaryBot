@@ -20,7 +20,7 @@ impl From<&ActiveSprintContext> for SprintContext {
 enum SprintEvents {
     SprintPreview(SprintEvent),
     SprintKickoff(SprintEvent),
-    SprintCheckIn,
+    SprintAction(String),
     ScheduledTrigger,
 }
 
@@ -36,10 +36,10 @@ impl SprintEventParser for SprintEvents {
                     SprintEvents::SprintPreview(_) | SprintEvents::SprintKickoff(_) => {
                         Err(anyhow!("Sprint {} already in progress", active_sprint_record.name))
                     },
-                    SprintEvents::SprintCheckIn => {
+                    SprintEvents::SprintAction(sprint_command) => {
                         Ok(SprintEvent {
                             response_url: None,
-                            sprint_command: "/sprint-check-in".to_string(),
+                            sprint_command: sprint_command.to_string(),
                             sprint_context: (&active_sprint_record).into(),
                         })
                     },
@@ -111,7 +111,6 @@ impl SprintEventParser for LambdaEvent<Value> {
 mod sprint_event_tests {
     use crate::{sprint_summary::sprint_records::mocks::MockSprintClient, utils::date::print_current_date};
     use super::*;
-    use anyhow::anyhow;
 
     #[tokio::test]
     async fn test_sprint_preview_with_active_sprint() {
@@ -130,7 +129,7 @@ mod sprint_event_tests {
     #[tokio::test]
     async fn test_sprint_checkin_with_active_sprint() {
         let mock_client = MockSprintClient::new(Some(ActiveSprintContext::default()), None, None);
-        let event = SprintEvents::SprintCheckIn;
+        let event = SprintEvents::SprintAction("/sprint-check-in".to_string());
 
         let result = event.try_into_sprint_event(&mock_client).await.unwrap();
         assert_eq!(result.sprint_command, "/sprint-check-in");
@@ -194,7 +193,7 @@ mod sprint_event_tests {
     #[tokio::test]
     async fn test_sprint_checkin_without_active_sprint() {
         let mock_client = MockSprintClient::new(None, None, None);
-        let event = SprintEvents::SprintCheckIn;
+        let event = SprintEvents::SprintAction("/sprint-check-in".to_string());
 
         let result = event.try_into_sprint_event(&mock_client).await;
         assert!(result.is_err());
@@ -213,7 +212,7 @@ mod sprint_event_tests {
             in_scope_tickets_count_beginning: 5,
         };
         let mock_client = MockSprintClient::new(Some(active_context), None, None);
-        let event = SprintEvents::DailySummary;
+        let event = SprintEvents::ScheduledTrigger;
 
         let result = event.try_into_sprint_event(&mock_client).await.unwrap();
         assert_eq!(result.sprint_command, "/sprint-review");

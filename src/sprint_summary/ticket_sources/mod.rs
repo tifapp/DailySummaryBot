@@ -358,6 +358,6 @@ mod ticket_summary_tests {
 
         let summary = client.fetch_ticket_summary("CurrentSprint", &historical_records, previous_ticket_data, user_mapping).await.unwrap();
 
-        assert!(summary.deferred_tickets.iter().any(|ticket| ticket.details.id == "orphan123"));
+        assert!(summary.deferred_tickets.iter().any(|ticket| ticket.details.id == "orphan123")); //need to make a test-only impl to check that an orphan ticket exists
     }
 }

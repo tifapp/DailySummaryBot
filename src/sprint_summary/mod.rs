@@ -104,6 +104,7 @@ impl SprintEventMessageGenerator for SprintEvent {
         
         //add unit test for running multiple commands in sequence
         match self.sprint_command.as_str() {
+            //use enums
             "/sprint-kickoff" => {
                 //add a unit test to validate the output message
                 let mut message_blocks = vec![
@@ -170,6 +171,79 @@ impl SprintEventMessageGenerator for SprintEvent {
                 message_blocks.extend(ticket_summary.into_slack_blocks());
                 message_blocks.push(board_link_block);
                 //sdend trtello request to change board name
+                Ok(message_blocks)
+            },
+            "/sprint-cancel" => {
+                //add a unit test to validate the output message
+                //validate that data is saved to the mock hashmap
+                let eventbridge_client = create_eventbridge_client().await;
+                eventbridge_client.delete_daily_trigger_rule(&self.sprint_context.name).await?;
+                ticket_summary.clear_completed_and_deferred();
+                sprint_client.put_ticket_data(&(&ticket_summary).into()).await?;
+                sprint_client.clear_sprint_data().await?;
+
+                let mut message_blocks = vec![
+                    header_block(&format!("Sprint {} is cancelled.", self.sprint_context.name)),
+                ];
+                message_blocks.extend(ticket_summary.into_slack_blocks());
+                message_blocks.push(board_link_block);
+                
+                Ok(message_blocks)
+            },
+            "/sprint-end" => {
+                //add a unit test to validate the output message
+                //validate that data is saved to the mock hashmap
+                let eventbridge_client = create_eventbridge_client().await;
+                eventbridge_client.delete_daily_trigger_rule(&self.sprint_context.name).await?;
+                let sprint_data = sprint_client.get_sprint_data().await?.expect("ongoing sprint should exist");
+                sprint_client.clear_sprint_data().await?;
+
+                let open_tickets_added_count = ticket_summary.open_ticket_count as i32 - sprint_data.open_tickets_count_beginning as i32;
+                let tickets_added_to_scope_count = ticket_summary.in_sprint_scope_ticket_count as i32 - sprint_data.in_scope_tickets_count_beginning as i32;
+
+                let mut message_blocks = vec![
+                    header_block(&format!("Sprint {} is ended early.", self.sprint_context.time_indicator())),
+                    header_block(&format!("\n*{}/{} Tickets* Completed in {} Days*", ticket_summary.completed_tickets.len(), ticket_summary.in_sprint_scope_ticket_count, self.sprint_context.total_days())),
+                    header_block(&format!("\n*{:.2}% of tasks completed.*", ticket_summary.completed_percentage)),
+                ];
+                if open_tickets_added_count != 0 {
+                    let tickets_added_label = if open_tickets_added_count < 0 {
+                        "removed"
+                    } else {
+                        "added to sprint"
+                    };
+                    message_blocks.push(header_block(&format!("\n{} tickets {}", open_tickets_added_count.abs(), tickets_added_label)));
+                }
+
+                if tickets_added_to_scope_count != 0 {
+                    let tickets_added_scope_label = if tickets_added_to_scope_count < 0 {
+                        "removed from scope"
+                    } else {
+                        "added to scope"
+                    };
+                    message_blocks.push(header_block(&format!("\n{} tickets {}", tickets_added_to_scope_count.abs(), tickets_added_scope_label)));
+                }
+
+                message_blocks.extend(ticket_summary.into_slack_blocks());
+                message_blocks.extend(historical_data.into_slack_blocks());
+                message_blocks.push(board_link_block);
+
+                historical_data.history.push(CumulativeSprintContext {
+                    name: self.sprint_context.name.clone(),
+                    start_date: self.sprint_context.start_date.clone(),
+                    end_date: self.sprint_context.end_date.clone(),
+                    percent_complete: ticket_summary.completed_percentage,
+                    completed_tickets_count: ticket_summary.completed_tickets.len() as u32,
+                    open_tickets_added_count,
+                    tickets_added_to_scope_count
+                });
+                
+                sprint_client.put_historical_data(&historical_data).await?;
+                
+                //send request to trello to move completed tickets to garbage bin
+                ticket_summary.clear_completed_and_deferred();
+                sprint_client.put_ticket_data(&(&ticket_summary).into()).await?;
+
                 Ok(message_blocks)
             },
             "/sprint-review" => {

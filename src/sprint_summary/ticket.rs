@@ -484,6 +484,7 @@ mod tests {
     
     #[test]
     fn test_missing_description_warning_ignore_missing_description() {
+        //add custom fields for problem, solution, approach, test plan/deliverable? or a trello ticket format
         let mut ticket = Ticket::default();
         ticket.details.state = TicketState::InScope;
         ticket.details.has_description = false;

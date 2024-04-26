@@ -49,7 +49,9 @@ impl From<SlackSlashCommandBody> for SprintEvents {
     fn from(item: SlackSlashCommandBody) -> Self {
         match item.command.as_str() {
             "/sprint-kickoff" => SprintEvents::SprintPreview(item.into()),
-            "/sprint-check-in" => SprintEvents::SprintCheckIn,
+            "/sprint-check-in" => SprintEvents::SprintAction("/sprint-check-in".to_string()),
+            "/sprint-end" => SprintEvents::SprintAction("/sprint-end".to_string()),
+            "/sprint-cancel" => SprintEvents::SprintAction("/sprint-cancel".to_string()),
             _ => unimplemented!("This command is not supported yet"),
         }
     }

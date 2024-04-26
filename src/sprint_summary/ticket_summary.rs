@@ -25,7 +25,7 @@ pub struct TicketSummary {
     blocked_prs: VecDeque<Ticket>,
     open_prs: VecDeque<Ticket>,
     open_tickets: VecDeque<Ticket>,
-    deferred_tickets: VecDeque<Ticket>,
+    pub deferred_tickets: VecDeque<Ticket>,
     pub completed_tickets: VecDeque<Ticket>,
     pub in_sprint_scope_ticket_count: u32,
     pub open_ticket_count: u32,

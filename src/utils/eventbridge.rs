@@ -1,6 +1,7 @@
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_eventbridge::{types::{RuleState, Target}, Client};
 use anyhow::{Result, anyhow};
+use crate::tracing::{error, info};
 
 pub async fn create_eventbridge_client() -> Client {
     let region_provider = RegionProviderChain::default_provider().or_else("us-west-2");
@@ -40,6 +41,8 @@ impl EventBridgeExtensions for Client {
     }
 
     async fn delete_daily_trigger_rule(&self, rule_name: &str) -> Result<()> {
+        info!("{:?}", self.describe_rule().name(rule_name).send().await.map_err(|e| anyhow!("Failed to delete rule: {}", e))?);
+
         self.delete_rule().name(rule_name).send().await.map_err(|e| anyhow!("Failed to delete rule: {}", e))?;
 
         Ok(())

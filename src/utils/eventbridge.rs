@@ -43,9 +43,16 @@ impl EventBridgeExtensions for Client {
     async fn delete_daily_trigger_rule(&self, rule_name: &str) -> Result<()> {
         info!("{:?}", self.describe_rule().name(rule_name).send().await.map_err(|e| anyhow!("Failed to describe rule: {}", e))?);
 
-        self.remove_targets().rule(rule_name).send().await.map_err(|e| anyhow!("Failed to delete target: {}", e))?;
+        self.remove_targets()
+            .rule(rule_name)
+            .ids("daily_summary_bot") // Here you specify the ID of the target to remove
+            .send().await
+            .map_err(|e| anyhow!("Failed to remove target: {}", e))?;
 
-        self.delete_rule().name(rule_name).send().await.map_err(|e| anyhow!("Failed to delete rule: {}", e))?;
+        self.delete_rule()
+            .name(rule_name)
+            .send().await
+            .map_err(|e| anyhow!("Failed to delete rule: {}", e))?;
 
         Ok(())
     }

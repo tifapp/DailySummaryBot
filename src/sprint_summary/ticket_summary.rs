@@ -79,7 +79,7 @@ impl From<Vec<Ticket>> for TicketSummary {
         }
 
         TicketSummary {
-            completed_percentage: completed_tickets.len() as f64 / open_ticket_count as f64,
+            completed_percentage: completed_tickets.len() as f64 / (deferred_tickets.len() as f64 + open_ticket_count as f64),
             blocked_prs,
             open_prs,
             open_tickets,

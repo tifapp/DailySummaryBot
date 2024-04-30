@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use chrono::NaiveDate;
 use serde::Deserialize;
-use crate::{sprint_summary::SprintContext, utils::{date::print_current_date, http::HttpRequest}};
+use crate::{utils::{http::HttpRequest}};
 use anyhow::{anyhow, Context, Result};
-use super::{SprintEvent, SprintEvents};
+use super::SprintEvents;
 
 #[derive(Debug, Deserialize)]
 struct SlackSlashCommandBody {
@@ -28,34 +28,25 @@ impl TryFrom<&HttpRequest> for SlackSlashCommandBody {
     }
 }
 
-impl From<SlackSlashCommandBody> for SprintEvent {
-    fn from(item: SlackSlashCommandBody) -> Self {
-        let (end_date, name) = parse_sprint_params(&item.text).expect("could not convert slack message to sprint event");
-
-        SprintEvent {
-            sprint_command: item.command,
-            sprint_context: SprintContext {
-                start_date: print_current_date(),
-                channel_id: item.channel_id,
-                end_date,
-                name,
-            },
-            response_url: Some(item.response_url)
-        }
-    }
-}
-
 impl From<SlackSlashCommandBody> for SprintEvents {
     fn from(item: SlackSlashCommandBody) -> Self {
+        let args = item.text.split_whitespace().map(String::from).collect::<Vec<String>>();
+        let response_url = Some(item.response_url);
+
         match item.command.as_str() {
-            "/sprint-kickoff" => SprintEvents::SprintPreview(item.into()),
-            "/sprint-check-in" => SprintEvents::SprintAction("/sprint-check-in".to_string()),
-            "/sprint-end" => SprintEvents::SprintAction("/sprint-end".to_string()),
-            "/sprint-cancel" => SprintEvents::SprintAction("/sprint-cancel".to_string()),
-            _ => unimplemented!("This command is not supported yet"),
+            "/sprint-kickoff" | "/sprint-check-in" | "/sprint-end" | "/sprint-cancel" => {
+                SprintEvents::MessageTrigger {
+                    command: item.command,
+                    args,
+                    response_url,
+                    channel_id: item.channel_id
+                }
+            },
+            _ => unimplemented!("This command is not supported yet")
         }
     }
 }
+
 
 #[derive(Debug, Deserialize)]
 struct SlackBlockAction {
@@ -103,45 +94,15 @@ impl TryFrom<&HttpRequest> for SlackBlockActionPayload {
     }
 }
 
-impl From<SlackBlockActionPayload> for SprintEvent {
-    fn from(item: SlackBlockActionPayload) -> Self {
-        let (end_date, name) = parse_sprint_params(&item.actions[0].value).expect("should be able to parse slack block action");
-
-        SprintEvent {
-            sprint_command: item.actions[0].action_id.clone(),
-            sprint_context: SprintContext {
-                start_date: print_current_date(),
-                channel_id: item.channel.id,
-                end_date,
-                name,
-            },
-            response_url: None
-        }
-    }
-}
-
 impl From<SlackBlockActionPayload> for SprintEvents {
     fn from(item: SlackBlockActionPayload) -> Self {
+        let args: Vec<String> = item.actions[0].value.split_whitespace().map(String::from).collect::<Vec<String>>();
+
         match item.actions[0].action_id.as_str() {
-            "/sprint-kickoff-confirm" => SprintEvents::SprintKickoff(item.into()),
+            "/sprint-kickoff-confirm" => SprintEvents::MessageTrigger{command: item.actions[0].action_id.clone(), args, response_url: None, channel_id: item.channel.id},
             _ => unimplemented!("This command is not supported yet"),
         }
     }
-}
-
-fn parse_sprint_params(text: &str) -> Result<(String, String)> {
-    let parts: Vec<&str> = text.splitn(2, ' ').collect();
-    if parts.len() < 2 {
-        return Err(anyhow!("Text field does not contain enough parts"));
-    }
-
-    let end_date = parts[0];
-    let name = parts[1].to_string();
-
-    NaiveDate::parse_from_str(end_date, "%m/%d/%Y")
-        .with_context(|| format!("Failed to parse date: '{}'", end_date))?;
-
-    Ok((end_date.to_string(), name))
 }
 
 impl TryFrom<&HttpRequest> for SprintEvents {

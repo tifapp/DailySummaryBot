@@ -1,85 +1,88 @@
 mod slack_events;
 
+use chrono::NaiveDate;
 use lambda_runtime::LambdaEvent;
 use serde_json::Value;
 use crate::utils::http::HttpRequest;
 use anyhow::{anyhow, Error, Result};
-use super::{sprint_records::{ActiveSprintContext, CumulativeSprintContexts, SprintClient}, SprintContext, SprintEvent, SprintEventParser};
+use super::{sprint_records::{ActiveSprintContext, CumulativeSprintContexts}, SprintCommand, SprintCommandParser};
 
-impl From<&ActiveSprintContext> for SprintContext {
-    fn from(record: &ActiveSprintContext) -> Self {
-        SprintContext {
-            start_date: record.start_date.clone(),
-            end_date: record.end_date.clone(),
-            name: record.name.clone(),
-            channel_id: record.channel_id.clone(),
-        }
-    }
-}
-
-enum SprintEvents {
-    SprintPreview(SprintEvent),
-    SprintKickoff(SprintEvent),
-    SprintAction(String),
+pub enum SprintEvents {
+    MessageTrigger{command: String, args: Vec<String>, channel_id: String, response_url: Option<String>},
     ScheduledTrigger,
 }
 
-impl SprintEventParser for SprintEvents {
-    //unit test all branches
-    async fn try_into_sprint_event<'a>(
+impl SprintCommandParser for SprintEvents {
+    async fn try_into_sprint_command(
         &self, 
-        sprint_client: &'a dyn SprintClient
-    ) -> Result<SprintEvent> {
-        match sprint_client.get_sprint_data().await {
-            Ok(Some(active_sprint_record)) => {
+        active_sprint_context: &Option<ActiveSprintContext>,
+        cumulative_sprint_contexts: &CumulativeSprintContexts,
+    ) -> Result<SprintCommand> {
+        match active_sprint_context {
+            Some(active_sprint_record) => {
                 match self {
-                    SprintEvents::SprintPreview(_) | SprintEvents::SprintKickoff(_) => {
-                        Err(anyhow!("Sprint {} already in progress", active_sprint_record.name))
-                    },
-                    SprintEvents::SprintAction(sprint_command) => {
-                        Ok(SprintEvent {
-                            response_url: None,
-                            sprint_command: sprint_command.to_string(),
-                            sprint_context: (&active_sprint_record).into(),
-                        })
+                    SprintEvents::MessageTrigger { command, args: _, channel_id: _,  response_url: _ } => {
+                        match command.as_str() {
+                            "/sprint-kickoff" | "/sprint-kickoff-confirm" => {
+                                Err(anyhow!("Sprint {} already in progress", active_sprint_record.name))
+                            },
+                            "/sprint-cancel" => Ok(SprintCommand::SprintCancel),
+                            "/sprint-end" => Ok(SprintCommand::SprintEnd),
+                            "/sprint-check-in" => Ok(SprintCommand::SprintCheckIn),
+                            _ => Err(anyhow!("Invalid command")),
+                        }
                     },
                     SprintEvents::ScheduledTrigger => {
-                        let sprint_context: SprintContext = (&active_sprint_record).into();
-                        
-                        Ok(SprintEvent {
-                            response_url: None,
-                            sprint_command: if sprint_context.days_until_end() <= 0 {
-                                "/sprint-review".to_string()
-                            } else {
-                                "/daily-summary".to_string()
-                            },
-                            sprint_context: sprint_context,
-                        })
-                    },
-                }
-            },
-            Ok(None) => {
-                match self {
-                    SprintEvents::SprintPreview(sprint_event) | SprintEvents::SprintKickoff(sprint_event) => {
-                        let history = sprint_client.get_historical_data().await?.unwrap_or(CumulativeSprintContexts {
-                            history: Vec::new(),
-                        });
-
-                        if history.was_sprint_name_used(&sprint_event.sprint_context.name) {
-                            return Err(anyhow!("Sprint name {} was already used", sprint_event.sprint_context.name));
+                        if active_sprint_record.days_until_end() <= 0 {
+                            Ok(SprintCommand::SprintReview)
+                        } else {
+                            Ok(SprintCommand::DailySummary)
                         }
-
-                        Ok(sprint_event.clone())
                     },
-                    _ => Err(anyhow!("No active sprint data available for this operation")),
                 }
             },
-            Err(e) => Err(anyhow!("Failed to retrieve sprint data: {}", e)),
+            None => {
+                match self {
+                    SprintEvents::MessageTrigger { command, args, channel_id, response_url: _ } => {
+                        match command.as_str() {
+                            "/sprint-cancel" | "/sprint-end" | "/sprint-check-in" => {
+                                Err(anyhow!("No sprint in progress"))
+                            },
+                            "/sprint-kickoff" | "/sprint-kickoff-confirm" => {
+                                if args.len() < 2 {
+                                    return Err(anyhow!("Text field does not contain enough parts"));
+                                }
+                                
+                                NaiveDate::parse_from_str(&args[0], "%m/%d/%Y")
+                                    .map_err(|e| format!("Failed to parse date: {}", e));
+
+                                if cumulative_sprint_contexts.was_sprint_name_used(&command) {
+                                    Err(anyhow!("Sprint name {} was already used", command))
+                                } else if command.as_str() == "/sprint-kickoff-confirm" {
+                                    Ok(SprintCommand::SprintKickoff {
+                                        end_date: args[0].clone(),
+                                        sprint_name: args[1].clone(),
+                                        channel_id: channel_id.clone()
+                                    })
+                                } else {
+                                    Ok(SprintCommand::SprintPreview {
+                                        end_date: args[0].clone(),
+                                        sprint_name: args[1].clone(),
+                                        channel_id: channel_id.clone()
+                                    })
+                                }
+                            },
+                            _ => Err(anyhow!("Invalid command"))
+                        }
+                    },
+                    SprintEvents::ScheduledTrigger => Err(anyhow!("No sprint in progress")),
+                }
+            },
         }
     }
 }
 
-trait MapToSprintEvents {
+pub trait MapToSprintEvents {
     fn try_into_sprint_events(&self) -> Result<SprintEvents, Error>;
 }
 
@@ -98,124 +101,211 @@ impl MapToSprintEvents for LambdaEvent<Value> {
     }
 }
 
-impl SprintEventParser for LambdaEvent<Value> {
-    async fn try_into_sprint_event<'a>(&self, sprint_client: &'a dyn SprintClient) -> Result<SprintEvent> {
-        match self.try_into_sprint_events() {
-            Ok(sprint_events) => sprint_events.try_into_sprint_event(sprint_client).await,
-            Err(e) => Err(e),
-        }
-    }
-}
-
 #[cfg(test)]
 mod sprint_event_tests {
-    use crate::{sprint_summary::sprint_records::mocks::MockSprintClient, utils::date::print_current_date};
+    use chrono::Local;
+
+    use crate::sprint_summary::sprint_records::CumulativeSprintContext;
     use super::*;
 
     #[tokio::test]
     async fn test_sprint_preview_with_active_sprint() {
-        let mock_client = MockSprintClient::new(Some(ActiveSprintContext::default()), None, None);
-        let event = SprintEvents::SprintPreview(SprintEvent {
-            response_url: None,
-            sprint_command: "/sprint-preview".to_string(),
-            sprint_context: (&ActiveSprintContext::default()).into(),
-        });
+        let active_context = ActiveSprintContext {
+            name: "Sprint 1".to_string(),
+            start_date: "01/01/22".to_string(),
+            end_date: "01/15/22".to_string(),
+            channel_id: "C123456".to_string(),
+            ..ActiveSprintContext::default()
+        };
+        let mock_client = Some(active_context);
+        let cumulative_contexts = CumulativeSprintContexts { history: vec![] };
 
-        let result = event.try_into_sprint_event(&mock_client).await;
+        let event = SprintEvents::MessageTrigger {
+            command: "/sprint-preview".to_string(),
+            args: vec!["01/20/22".to_string(), "New Sprint".to_string()],
+            channel_id: "C123456".to_string(),
+            response_url: None,
+        };
+
+        let result = event.try_into_sprint_command(&mock_client, &cumulative_contexts).await;
         assert!(result.is_err());
-        assert_eq!(format!("{}", result.unwrap_err()), format!("Sprint {} already in progress", "Sprint 1"));
     }
 
     #[tokio::test]
     async fn test_sprint_checkin_with_active_sprint() {
-        let mock_client = MockSprintClient::new(Some(ActiveSprintContext::default()), None, None);
-        let event = SprintEvents::SprintAction("/sprint-check-in".to_string());
+        let active_context = ActiveSprintContext {
+            name: "Sprint 1".to_string(),
+            start_date: "01/01/22".to_string(),
+            end_date: "01/15/22".to_string(),
+            channel_id: "C123456".to_string(),
+            ..ActiveSprintContext::default()
+        };
+        let mock_client = Some(active_context);
+        let cumulative_contexts = CumulativeSprintContexts { history: vec![] };
 
-        let result = event.try_into_sprint_event(&mock_client).await.unwrap();
-        assert_eq!(result.sprint_command, "/sprint-check-in");
-        assert_eq!(result.sprint_context.name, "Sprint 1");
-    }
+        let event = SprintEvents::MessageTrigger {
+            command: "/sprint-check-in".to_string(),
+            args: vec![],
+            channel_id: "C123456".to_string(),
+            response_url: None,
+        };
 
-    #[tokio::test]
-    async fn test_daily_summary_with_no_active_sprint() {
-        let mock_client = MockSprintClient::new(None, None, None);
-        let event = SprintEvents::ScheduledTrigger;
-
-        let result = event.try_into_sprint_event(&mock_client).await;
-        assert!(result.is_err());
+        let result = event.try_into_sprint_command(&mock_client, &cumulative_contexts).await;
+        assert!(matches!(result, Ok(SprintCommand::SprintCheckIn)));
     }
 
     #[tokio::test]
     async fn test_sprint_kickoff_with_used_name() {
-        let mock_client = MockSprintClient::new(None, Some(CumulativeSprintContexts::default()), None);
-        let event = SprintEvents::SprintKickoff(SprintEvent {
-            response_url: None,
-            sprint_command: "/sprint-kickoff".to_string(),
-            sprint_context: (&ActiveSprintContext::default()).into(),
-        });
+        let cumulative_contexts = CumulativeSprintContexts {
+            history: vec![CumulativeSprintContext {
+                name:"Sprint 1".to_string(), 
+                ..CumulativeSprintContext::default()
+            }],
+        };
 
-        let result = event.try_into_sprint_event(&mock_client).await;
+        let event = SprintEvents::MessageTrigger {
+            command: "/sprint-kickoff-confirm".to_string(),
+            args: vec!["02/01/22".to_string(), "Sprint 1".to_string()],
+            channel_id: "C789123".to_string(),
+            response_url: None,
+        };
+
+        let result = event.try_into_sprint_command(&None, &cumulative_contexts).await;
         assert!(result.is_err());
-        assert_eq!(format!("{}", result.unwrap_err()), "Sprint name Sprint 1 was already used");
     }
 
     #[tokio::test]
     async fn test_sprint_kickoff_without_active_sprint_and_no_name_conflict() {
-        let mock_client = MockSprintClient::new(None, Some(CumulativeSprintContexts {history: vec![]}), None);
-        let event = SprintEvents::SprintKickoff(SprintEvent {
-            response_url: None,
-            sprint_command: "/sprint-kickoff".to_string(),
-            sprint_context: SprintContext {
-                start_date: "02/01/22".to_string(),
-                end_date: "02/15/22".to_string(),
-                name: "New Sprint".to_string(),
-                channel_id: "C789123".to_string(),
-            },
-        });
+        let cumulative_contexts = CumulativeSprintContexts { history: vec![] };
 
-        let result = event.try_into_sprint_event(&mock_client).await.unwrap();
-        assert_eq!(result.sprint_command, "/sprint-kickoff");
-        assert_eq!(result.sprint_context.name, "New Sprint");
+        let event = SprintEvents::MessageTrigger {
+            command: "/sprint-kickoff-confirm".to_string(),
+            args: vec!["02/01/22".to_string(), "New Sprint".to_string()],
+            channel_id: "C789123".to_string(),
+            response_url: None,
+        };
+
+        let result = event.try_into_sprint_command(&None, &cumulative_contexts).await;
+        assert!(matches!(result, Ok(SprintCommand::SprintKickoff { .. })));
+    }
+    
+    #[tokio::test]
+    async fn test_daily_summary_with_no_active_sprint() {
+        let mock_client = None;
+        let cumulative_contexts = CumulativeSprintContexts { history: vec![] };
+
+        let event = SprintEvents::ScheduledTrigger;
+
+        let result = event.try_into_sprint_command(&mock_client, &cumulative_contexts).await;
+        assert!(result.is_err(), "Daily summary should fail without an active sprint");
     }
 
     #[tokio::test]
-    async fn test_daily_summary_with_active_sprint() {
-        let mock_client = MockSprintClient::new(Some(ActiveSprintContext::default()), None, None);
+    async fn test_sprint_review_with_active_sprint_due_for_review() {
+        let active_context = ActiveSprintContext {
+            name: "Sprint 1".to_string(),
+            start_date: "01/01/22".to_string(),
+            end_date: "01/01/22".to_string(),
+            channel_id: "C123456".to_string(),
+            ..ActiveSprintContext::default()
+        };
+        let mock_client = Some(active_context);
+        let cumulative_contexts = CumulativeSprintContexts { history: vec![] };
+
         let event = SprintEvents::ScheduledTrigger;
 
-        let result = event.try_into_sprint_event(&mock_client).await;
-        assert!(result.is_ok());
-        let sprint_event = result.unwrap();
-        assert_eq!(sprint_event.sprint_command, "/daily-summary");
-        assert_eq!(sprint_event.sprint_context.name, "Sprint 1");
+        let result = event.try_into_sprint_command(&mock_client, &cumulative_contexts).await;
+        assert!(matches!(result, Ok(SprintCommand::SprintReview)), "Sprint review should be triggered on the last day");
+    }
+
+    #[tokio::test]
+    async fn test_daily_summary_with_active_sprint_not_due() {
+        let active_context = ActiveSprintContext {
+            name: "Sprint 1".to_string(),
+            start_date: "01/01/22".to_string(),
+            end_date: "12/31/22".to_string(),
+            channel_id: "C123456".to_string(),
+            ..ActiveSprintContext::default()
+        };
+        let mock_client = Some(active_context);
+        let cumulative_contexts = CumulativeSprintContexts { history: vec![] };
+
+        let event = SprintEvents::ScheduledTrigger;
+
+        let result = event.try_into_sprint_command(&mock_client, &cumulative_contexts).await;
+        assert!(matches!(result, Ok(SprintCommand::DailySummary)), "Daily summary should be generated for active sprints not due for review");
+    }
+
+    #[tokio::test]
+    async fn test_unrecognized_command() {
+        let active_context = Some(ActiveSprintContext {
+            name: "Sprint 1".to_string(),
+            start_date: "01/01/22".to_string(),
+            end_date: "01/15/22".to_string(),
+            channel_id: "C123456".to_string(),
+            ..ActiveSprintContext::default()
+        });
+        let cumulative_contexts = CumulativeSprintContexts { history: vec![] };
+
+        let event = SprintEvents::MessageTrigger {
+            command: "/unknown-command".to_string(),
+            args: vec![],
+            channel_id: "C123456".to_string(),
+            response_url: None,
+        };
+
+        let result = event.try_into_sprint_command(&active_context, &cumulative_contexts).await;
+        assert!(result.is_err(), "Unrecognized commands should return an error");
+    }
+
+    #[tokio::test]
+    async fn test_sprint_end_with_no_active_sprint() {
+        let mock_client = None;
+        let cumulative_contexts = CumulativeSprintContexts { history: vec![] };
+
+        let event = SprintEvents::MessageTrigger {
+            command: "/sprint-end".to_string(),
+            args: vec![],
+            channel_id: "C789123".to_string(),
+            response_url: None,
+        };
+
+        let result = event.try_into_sprint_command(&mock_client, &cumulative_contexts).await;
+        assert!(result.is_err(), "Ending a sprint should fail without an active sprint");
     }
 
     #[tokio::test]
     async fn test_sprint_checkin_without_active_sprint() {
-        let mock_client = MockSprintClient::new(None, None, None);
-        let event = SprintEvents::SprintAction("/sprint-check-in".to_string());
+        let mock_client = None; // No active sprint
+        let cumulative_contexts = CumulativeSprintContexts { history: vec![] };
 
-        let result = event.try_into_sprint_event(&mock_client).await;
-        assert!(result.is_err());
-        assert_eq!(format!("{}", result.unwrap_err()), "No active sprint data available for this operation");
+        let event = SprintEvents::MessageTrigger {
+            command: "/sprint-check-in".to_string(),
+            args: vec![],
+            channel_id: "C789123".to_string(),
+            response_url: None,
+        };
+
+        let result = event.try_into_sprint_command(&mock_client, &cumulative_contexts).await;
+        assert!(result.is_err(), "Check-in should fail without an active sprint");
     }
 
     #[tokio::test]
     async fn test_daily_summary_with_active_sprint_last_day() {
+        let today = Local::today().naive_local();
         let active_context = ActiveSprintContext {
             name: "Sprint 1".to_string(),
-            start_date: "01/01/22".to_string(),
-            end_date: print_current_date(),
+            start_date: (today - chrono::Duration::days(14)).format("%m/%d/%Y").to_string(),
+            end_date: today.format("%m/%d/%Y").to_string(),
             channel_id: "C123456".to_string(),
-            trello_board: "Board123".to_string(),
-            open_tickets_count_beginning: 10,
-            in_scope_tickets_count_beginning: 5,
+            ..ActiveSprintContext::default()
         };
-        let mock_client = MockSprintClient::new(Some(active_context), None, None);
+        let mock_client = Some(active_context);
+        let cumulative_contexts = CumulativeSprintContexts { history: vec![] };
+
         let event = SprintEvents::ScheduledTrigger;
 
-        let result = event.try_into_sprint_event(&mock_client).await.unwrap();
-        assert_eq!(result.sprint_command, "/sprint-review");
-        assert_eq!(result.sprint_context.name, "Sprint 1");
+        let result = event.try_into_sprint_command(&mock_client, &cumulative_contexts).await;
+        assert!(matches!(result, Ok(SprintCommand::SprintReview)), "Should transition to sprint review on the last day");
     }
 }

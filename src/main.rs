@@ -6,26 +6,58 @@ use anyhow::Result;
 use reqwest::Client;
 use serde_json::{json, Value};
 use tracing::{error, info};
-use crate::sprint_summary::{SprintEventMessageGenerator, SprintEventParser};
+use crate::sprint_summary::{SprintCommandParser, events::MapToSprintEvents};
 use crate::utils::s3::create_json_storage_client;
 use crate::utils::slack_output::TeamCommunicationClient;
+use crate::sprint_summary::sprint_records::{DailyTicketContextClient, ActiveSprintContextClient, CumulativeSprintContextClient, SprintMemberClient};
+use crate::sprint_summary::ticket_sources::TicketSummaryClient;
+use sprint_summary::sprint_records::{CumulativeSprintContexts,DailyTicketContexts};
 
 #[cfg(not(test))]
 async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    use std::collections::{HashMap, VecDeque};
+
+    use sprint_summary::{events::SprintEvents, SprintCommand};
+
+
     info!("Input is: {:?}", event);
 
-    let storage_client = create_json_storage_client().await;
+    let sprint_client = create_json_storage_client().await;
 
-    let sprint_event_result = event.try_into_sprint_event(&storage_client).await;
-    match sprint_event_result {
-        Ok(sprint_event) => {
-            info!("sprint event is valid: {:?}", sprint_event);
+    let active_sprint_context = sprint_client.get_sprint_data().await?;
+    let previous_ticket_data = sprint_client.get_ticket_data().await?.unwrap_or(DailyTicketContexts {
+        tickets: VecDeque::new(),
+    });
+    let user_mapping = sprint_client.get_sprint_members().await?.unwrap_or(HashMap::new());
+    let mut cumulative_sprint_contexts = sprint_client.get_historical_data().await?.unwrap_or(CumulativeSprintContexts {
+        history: Vec::new(),
+    });
 
+    let sprint_events = event.try_into_sprint_events().expect("Failed to parse sprint events");
+    
+    let (channel_id, response_url) = match &sprint_events {
+        SprintEvents::MessageTrigger { channel_id, response_url, .. } => (channel_id.clone(), response_url.clone()),
+        _ => (active_sprint_context.as_ref().unwrap().channel_id.clone(), None)
+    };
+
+    let sprint_command_result = sprint_events.try_into_sprint_command(&active_sprint_context, &cumulative_sprint_contexts).await;
+
+    match sprint_command_result {
+        Ok(sprint_command) => {
+            info!("Sprint event is valid: {:?}", sprint_command);
+            
             let fetch_client = Client::new();
-            info!("Have fetch client");
-            let sprint_message = &sprint_event.create_sprint_event_message(&fetch_client, &storage_client).await.expect("should generate sprint message");
-            info!("Got sprint message {:?}", sprint_message);
-            match fetch_client.send_teams_message(&sprint_event.sprint_context.channel_id, sprint_message, sprint_event.response_url).await {
+            let name = match &sprint_command {
+                SprintCommand::SprintPreview { sprint_name, .. } | SprintCommand::SprintKickoff { sprint_name, .. } => sprint_name,
+                _ => &active_sprint_context.as_ref().unwrap().name,
+            };
+
+            let mut ticket_summary = fetch_client.fetch_ticket_summary(name, &cumulative_sprint_contexts, previous_ticket_data, user_mapping).await?;
+
+            let sprint_message = sprint_command.create_sprint_message(&ticket_summary, &active_sprint_context, &cumulative_sprint_contexts).await.expect("should generate sprint message");
+            sprint_command.save_sprint_state(&mut ticket_summary, &active_sprint_context, &mut cumulative_sprint_contexts, &sprint_client).await.expect("should update sprint state");
+
+            match fetch_client.send_teams_message(&channel_id, &sprint_message, response_url).await {
                 Ok(()) => Ok(json!("Processed command successfully")),
                 Err(e) => Ok(json!(format!("Error processing command: {:?}", e))),
             }
@@ -40,6 +72,7 @@ async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         }
     }
 }
+
 
 #[tokio::main]
 #[cfg(not(test))]

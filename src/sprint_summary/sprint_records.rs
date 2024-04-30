@@ -210,8 +210,8 @@ pub mod mocks {
     impl Default for ActiveSprintContext {
         fn default() -> Self {
             ActiveSprintContext {
-                start_date: "2022-01-01".to_string(),
-                end_date: "2022-01-15".to_string(),
+                start_date: "02/20/23".to_string(),
+                end_date: "02/30/23".to_string(),
                 name: "Sprint 1".to_string(),
                 channel_id: "C123456".to_string(),
                 trello_board: "testboard".to_string(),

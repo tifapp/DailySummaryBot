@@ -1,7 +1,8 @@
 use chrono::{Local, NaiveDate, format::ParseError};
+use chrono_tz::US::Pacific;
 
 pub fn print_current_date() -> String {
-    let now = Local::now();
+    let now = Local::now().with_timezone(&Pacific);
     now.format("%m/%d/%y").to_string()
 }
 

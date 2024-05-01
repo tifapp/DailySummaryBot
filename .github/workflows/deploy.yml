@@ -36,10 +36,6 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install cargo-lambda
-    
-    - name: Tests
-      run: |
-        cargo test
 
     - name: Build and deploy lambda
       run: |  

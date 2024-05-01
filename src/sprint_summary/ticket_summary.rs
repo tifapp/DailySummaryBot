@@ -93,7 +93,7 @@ impl From<Vec<Ticket>> for TicketSummary {
             open_prs,
             open_tickets,
             sprint_ticket_count,
-            completed_percentage: completed_tickets.len() as f64 / sprint_ticket_count as f64,
+            completed_percentage: (completed_tickets.len() as f64 / sprint_ticket_count as f64) * 100.0,
             project_ticket_count,
             project_ticket_count_in_scope,
             open_ticket_count: sprint_ticket_count - completed_tickets.len() as u32 - deferred_tickets.len() as u32,
@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(summary_json["project_ticket_count_in_scope"], 2, "Total number of in-scope tickets should be 2");
         assert_eq!(summary_json["sprint_ticket_count"], 9, "Total number of sprint tickets should be 9");
         assert_eq!(summary_json["open_ticket_count"], 6, "Total number of open tickets should be 6");
-        assert_eq!(summary_json["completed_percentage"], 1.0/9.0, "Completed percentage should match #completed/#tickets in sprint scope");
+        assert_eq!(summary_json["completed_percentage"], 100.0*1.0/9.0, "Completed percentage should match #completed/#tickets in sprint scope");
         assert_eq!(summary_json["completed_tickets"], json!(vec![serde_json::to_value(&completed_ticket).unwrap()]), "Completed tickets should match");
         assert_eq!(summary_json["demoes"], json!(vec![serde_json::to_value(&demo_ticket).unwrap()]), "Completed tickets should match");
         assert_eq!(summary_json["open_tickets"], json!(vec![

@@ -22,6 +22,12 @@ pub struct PullRequest {
     pub mergeable: Option<bool>
 }
 
+impl PullRequest {
+    pub fn is_blocked(&self) -> bool {
+        self.merged == false && (self.mergeable != Some(true) || !self.failing_check_runs.is_empty())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TicketDetails {
     pub id: String,
@@ -388,6 +394,59 @@ pub mod mocks {
 #[cfg(test)]
 mod tests {
     use super::*;
+    
+    #[test]
+    fn test_pr_is_blocked_merged_failing_checks() {
+        let pr = PullRequest { 
+            failing_check_runs: vec![CheckRunDetails {name: "checkrun1".to_string(), details_url: "examplecheckrun.com".to_string()}], 
+            merged: true,
+            ..PullRequest::default()
+        };
+        
+        assert_eq!(pr.is_blocked(), false);
+    }
+    
+    #[test]
+    fn test_pr_is_blocked_failing_checks() {
+        let pr = PullRequest { 
+            failing_check_runs: vec![CheckRunDetails {name: "checkrun1".to_string(), details_url: "examplecheckrun.com".to_string()}], ..PullRequest::default() 
+        };
+        
+        assert_eq!(pr.is_blocked(), true);
+    }
+       
+    #[test]
+    fn test_pr_is_blocked_mergeable() {
+        let pr = PullRequest { 
+            mergeable: Some(true),
+            merged: false,
+            ..PullRequest::default()
+        };
+        
+        assert_eq!(pr.is_blocked(), false);
+    }
+       
+    #[test]
+    fn test_pr_is_blocked_not_mergeable() {
+        let pr = PullRequest { 
+            mergeable: None,
+            merged: false,
+            ..PullRequest::default()
+        };
+        
+        assert_eq!(pr.is_blocked(), true);
+    }
+
+    #[test]
+    fn test_pr_is_blocked_merged() {
+        let pr = PullRequest { 
+            mergeable: Some(false),
+            merged: true,
+            ..PullRequest::default()
+        };
+        
+        assert_eq!(pr.is_blocked(), false);
+    }
 
     #[test]
     fn test_ticket_name_new_emoji_new() {

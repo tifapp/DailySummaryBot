@@ -53,7 +53,7 @@ impl SprintCommandParser for SprintEvents {
                                     return Err(anyhow!("Text field does not contain enough parts"));
                                 }
                                 
-                                NaiveDate::parse_from_str(&args[0], "%m/%d/%y")
+                                let _ = NaiveDate::parse_from_str(&args[0], "%m/%d/%y")
                                     .map_err(|e| format!("Failed to parse date: {}", e));
 
                                 if cumulative_sprint_contexts.was_sprint_name_used(&args[1]) {
@@ -103,8 +103,6 @@ impl MapToSprintEvents for LambdaEvent<Value> {
 
 #[cfg(test)]
 mod sprint_event_tests {
-    use chrono::Local;
-
     use crate::{sprint_summary::sprint_records::CumulativeSprintContext, utils::date::print_current_date};
     use super::*;
 

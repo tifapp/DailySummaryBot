@@ -21,6 +21,7 @@ impl PrioritizedPush for VecDeque<Ticket> {
 
 #[derive(Debug, Serialize)]
 pub struct TicketSummary {
+    demoes: VecDeque<Ticket>,
     blocked_prs: VecDeque<Ticket>,
     open_prs: VecDeque<Ticket>,
     open_tickets: VecDeque<Ticket>,
@@ -29,7 +30,7 @@ pub struct TicketSummary {
     pub sprint_ticket_count: u32,
     pub open_ticket_count: u32,
     project_ticket_count: u32,
-    project_ticket_count_in_scope: u32,
+    pub project_ticket_count_in_scope: u32,
     pub completed_percentage: f64,
 }
 
@@ -42,6 +43,7 @@ impl TicketSummary {
 
 impl From<Vec<Ticket>> for TicketSummary {
     fn from(tickets: Vec<Ticket>) -> Self {
+        let mut demoes = VecDeque::new();
         let mut blocked_prs = VecDeque::new();
         let mut open_prs = VecDeque::new();
         let mut open_tickets = VecDeque::new();
@@ -66,10 +68,13 @@ impl From<Vec<Ticket>> for TicketSummary {
                     sprint_ticket_count += 1;
                     deferred_tickets.prioritized_push(ticket);
                 }
+            } else if ticket.details.state == TicketState::DemoFinalApproval {
+                sprint_ticket_count += 1;
+                demoes.prioritized_push(ticket);
             } else {
                 sprint_ticket_count += 1;
                 match &ticket.pr {
-                    Some(pr) if !pr.is_draft && (pr.mergeable != Some(true) || !pr.failing_check_runs.is_empty()) => {
+                    Some(pr) if !pr.is_draft && pr.is_blocked() => {
                         blocked_prs.prioritized_push(ticket);
                     },
                     Some(pr) if !pr.is_draft => {
@@ -83,6 +88,7 @@ impl From<Vec<Ticket>> for TicketSummary {
         }
 
         TicketSummary {
+            demoes,
             blocked_prs,
             open_prs,
             open_tickets,
@@ -111,6 +117,11 @@ impl TicketSummary {
             blocks.push(section_block("\n*🚨 Blocked PRs*"));
             blocks.push(list_block(self.blocked_prs.iter().map(|ticket| ticket.into_slack_blocks()).collect()));
         }
+        if !self.demoes.is_empty() {
+            blocks.push(divider_block());
+            blocks.push(section_block("\n*🎥 Demo Available*"));
+            blocks.push(list_block(self.demoes.iter().map(|ticket| ticket.into_slack_blocks()).collect()));
+        }
         if !self.open_tickets.is_empty() {
             blocks.push(divider_block());
             blocks.push(section_block("\n*Open Tickets*"));
@@ -128,7 +139,6 @@ impl TicketSummary {
         }
 
         blocks.push(divider_block());
-        blocks.push(section_block(&format!("{} Tickets Left In Scope", self.project_ticket_count_in_scope)));
 
         blocks
     }
@@ -167,6 +177,15 @@ pub mod mocks {
                     Ticket {
                         details: TicketDetails {
                             name: "Completed Ticket".to_string(),
+                            ..TicketDetails::default()
+                        },
+                        ..Ticket::default() 
+                    }
+                ]),
+                demoes: VecDeque::from(vec![
+                    Ticket {
+                        details: TicketDetails {
+                            name: "Ticket To Demo".to_string(),
                             ..TicketDetails::default()
                         },
                         ..Ticket::default() 
@@ -223,7 +242,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::sprint_summary::ticket::{CheckRunDetails, PullRequest, TicketDetails};
+    use crate::sprint_summary::ticket::{PullRequest, TicketDetails};
 
     #[test]
     fn test_prioritized_push() {
@@ -264,6 +283,7 @@ mod tests {
 
         let summary = TicketSummary::from(tickets);
         assert_eq!(serde_json::to_value(&summary).expect("summary should be parseable"), json!({
+            "demoes": [],
             "blocked_prs": [],
             "open_prs": [],
             "open_tickets": [],
@@ -280,13 +300,6 @@ mod tests {
         assert_eq!(serde_json::to_value(&blocks).expect("blocks should be parseable"), json!([
             {
               "type": "divider"
-            },
-            {
-              "type": "section",
-              "text": {
-                "type": "mrkdwn",
-                "text": "0 Tickets Left In Scope"
-              }
             }
           ]
         ));
@@ -299,6 +312,10 @@ mod tests {
     fn test_ticket_summary_from_vec_into_slack_blocks_and_contexts() {
         let completed_ticket = Ticket {
             details: TicketDetails { name: "Completed Ticket".to_string(), state: TicketState::Done, ..TicketDetails::default() },
+            ..Ticket::default()
+        };
+        let demo_ticket = Ticket {
+            details: TicketDetails { name: "Ticket To Demo".to_string(), state: TicketState::DemoFinalApproval, ..TicketDetails::default() },
             ..Ticket::default()
         };
         let in_progress_ticket = Ticket {
@@ -321,14 +338,9 @@ mod tests {
             pr: Some(PullRequest { is_draft: false, ..PullRequest::default() }),
             ..Ticket::default()
         };
-        let pr_blocked_ticket_failing_checks = Ticket {
-            details: TicketDetails { name: "PR Blocked Ticket".to_string(), state: TicketState::InProgress, ..TicketDetails::default() },
-            pr: Some(PullRequest { is_draft: false, failing_check_runs: vec![CheckRunDetails {name: "checkrun1".to_string(), details_url: "examplecheckrun.com".to_string()}], ..PullRequest::default() }),
-            ..Ticket::default()
-        };
-        let pr_blocked_ticket_not_mergable = Ticket {
+        let pr_blocked_ticket = Ticket {
             details: TicketDetails { name: "PR Blocked Ticket 2".to_string(), state: TicketState::InProgress, ..TicketDetails::default() },
-            pr: Some(PullRequest { is_draft: false, mergeable: Some(false), ..PullRequest::default() }),
+            pr: Some(PullRequest { is_draft: false, mergeable: Some(false), merged: false, ..PullRequest::default() }),
             ..Ticket::default()
         };
         let in_scope_ticket = Ticket {
@@ -348,12 +360,12 @@ mod tests {
     
         let tickets = vec![
             completed_ticket.clone(),
+            demo_ticket.clone(),
             in_progress_ticket.clone(),
             in_progress_goal_ticket.clone(),
             draft_pr_ticket.clone(),
             pr_open_ticket.clone(),
-            pr_blocked_ticket_failing_checks.clone(),
-            pr_blocked_ticket_not_mergable.clone(),
+            pr_blocked_ticket.clone(),
             in_scope_and_deferred_ticket.clone(),
             deferred_ticket.clone(),
             in_scope_ticket.clone(),
@@ -363,19 +375,20 @@ mod tests {
         
         let summary_json = serde_json::to_value(&summary).expect("summary should be parseable");
 
-        assert_eq!(summary_json["project_ticket_count"], 10, "Total number of tickets should be 9");
-        assert_eq!(summary_json["project_ticket_count_in_scope"], 2, "Total number of in-scope tickets should be 1");
-        assert_eq!(summary_json["sprint_ticket_count"], 9, "Total number of sprint tickets should be 8");
+        assert_eq!(summary_json["project_ticket_count"], 10, "Total number of tickets should be 10");
+        assert_eq!(summary_json["project_ticket_count_in_scope"], 2, "Total number of in-scope tickets should be 2");
+        assert_eq!(summary_json["sprint_ticket_count"], 9, "Total number of sprint tickets should be 9");
         assert_eq!(summary_json["open_ticket_count"], 6, "Total number of open tickets should be 6");
-        assert_eq!(summary_json["completed_percentage"], 1.0/9.0, "Completed percentage should match");
+        assert_eq!(summary_json["completed_percentage"], 1.0/9.0, "Completed percentage should match #completed/#tickets in sprint scope");
         assert_eq!(summary_json["completed_tickets"], json!(vec![serde_json::to_value(&completed_ticket).unwrap()]), "Completed tickets should match");
+        assert_eq!(summary_json["demoes"], json!(vec![serde_json::to_value(&demo_ticket).unwrap()]), "Completed tickets should match");
         assert_eq!(summary_json["open_tickets"], json!(vec![
             serde_json::to_value(&in_progress_goal_ticket).unwrap(), 
             serde_json::to_value(&in_progress_ticket).unwrap(), 
             serde_json::to_value(&draft_pr_ticket).unwrap()
         ]), "Open tickets should match");
         assert_eq!(summary_json["open_prs"], json!(vec![serde_json::to_value(&pr_open_ticket).unwrap()]), "Tickets with open PRs should match");
-        assert_eq!(summary_json["blocked_prs"], json!(vec![serde_json::to_value(&pr_blocked_ticket_failing_checks).unwrap(), serde_json::to_value(&pr_blocked_ticket_not_mergable).unwrap()]), "Tickets with blocked PRs should match");
+        assert_eq!(summary_json["blocked_prs"], json!(vec![serde_json::to_value(&pr_blocked_ticket).unwrap()]), "Tickets with blocked PRs should match");
         assert_eq!(summary_json["deferred_tickets"], json!(vec![serde_json::to_value(&in_scope_and_deferred_ticket).unwrap(), serde_json::to_value(&deferred_ticket).unwrap()]), "Deferred tickets should match");
     }
 }

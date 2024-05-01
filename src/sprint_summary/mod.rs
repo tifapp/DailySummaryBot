@@ -145,6 +145,7 @@ impl SprintCommand {
         daily_ticket_contexts: &DailyTicketContexts
     ) -> Result<Vec<Value>> {
         let trello_board_id = env::var("TRELLO_BOARD_ID").unwrap_or("TRELLO_BOARD_ID needs to exist".to_owned());
+        let project_scope_block = section_block(&format!("{} tickets left in project scope.", ticket_summary.project_ticket_count_in_scope));
         let board_link_block = context_block(&format!("<https://trello.com/b/{}|View sprint board>", trello_board_id));
 
         match self {
@@ -158,9 +159,9 @@ impl SprintCommand {
                     cumulative_sprint_contexts.into_slack_blocks(),
                     ticket_summary.into_slack_blocks(),
                     vec![
+                        project_scope_block,
                         board_link_block,
                         primary_button_block("Kick Off", "/sprint-kickoff-confirm",  &format!("{} {}", end_date, sprint_name)),
-                        section_block(&format!("{} Tickets Left In Scope", ticket_summary.project_ticket_count_in_scope)),
                     ]
                     ].concat()
                 )
@@ -187,10 +188,10 @@ impl SprintCommand {
                         active_sprint_context.as_ref().unwrap().days_until_end()
                     )),
                     section_block(&format!("\n*{:.2}% of sprint scope completed.*", ticket_summary.completed_percentage)),
-                    section_block(&format!("{} Tickets Left In Scope", ticket_summary.project_ticket_count_in_scope)),
                 ],
                     ticket_summary.into_slack_blocks(),
                 vec![
+                    project_scope_block,
                     board_link_block
                 ]].concat())
             },
@@ -203,8 +204,8 @@ impl SprintCommand {
                 ],
                     ticket_summary.into_slack_blocks(),
                 vec![
+                    project_scope_block,
                     board_link_block,
-                    section_block(&format!("{} Tickets Left In Scope", ticket_summary.project_ticket_count_in_scope)),
                 ]].concat())
             },
             SprintCommand::SprintEnd | SprintCommand::SprintReview => {
@@ -242,6 +243,7 @@ impl SprintCommand {
                     cumulative_sprint_contexts.into_slack_blocks(),
                     ticket_summary.into_slack_blocks(),
                     vec![
+                        project_scope_block,
                         board_link_block
                     ]]
                     .concat()
@@ -257,7 +259,7 @@ impl SprintCommand {
                     ticket_summary.into_slack_blocks(),
                     vec![   
                         board_link_block,
-                        section_block(&format!("{} Tickets Left In Scope", ticket_summary.project_ticket_count_in_scope)),
+                        section_block(&format!("{} tickets left in project scope.", ticket_summary.project_ticket_count_in_scope)),
                     ]
                 ].concat())
             }

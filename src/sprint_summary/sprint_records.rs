@@ -91,6 +91,14 @@ pub struct DailyTicketContexts {
     pub tickets: VecDeque<DailyTicketContext>,
 }
 
+impl DailyTicketContexts {
+    pub fn count_open_tickets(&self) -> usize {
+        self.tickets.iter()
+            .filter(|ticket| ticket.state != TicketState::Done)
+            .count()
+    }
+}
+
 #[async_trait(?Send)]
 pub trait DailyTicketContextClient {
     async fn get_ticket_data(&self) -> Result<Option<DailyTicketContexts>>;
@@ -205,7 +213,7 @@ pub mod mocks {
     use async_trait::async_trait;
     use serde_json::{json, Value};
     use crate::{sprint_summary::ticket_state::TicketState, utils::s3::JsonStorageClient};
-    use super::{ActiveSprintContext, ActiveSprintContextClient, CumulativeSprintContext, CumulativeSprintContextClient, CumulativeSprintContexts, DailyTicketContext, DailyTicketContextClient, DailyTicketContexts, SprintClient, SprintMemberClient};
+    use super::{ActiveSprintContext, ActiveSprintContextClient, CumulativeSprintContext, CumulativeSprintContextClient, CumulativeSprintContexts, DailyTicketContext, DailyTicketContextClient, DailyTicketContexts, SprintMemberClient};
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
@@ -269,7 +277,7 @@ pub mod mocks {
         fn default() -> Self {
             DailyTicketContexts {
                 tickets: VecDeque::from(vec![
-                    DailyTicketContext { ..DailyTicketContext::default() },
+                    DailyTicketContext { state: TicketState::InProgress, ..DailyTicketContext::default() },
                     DailyTicketContext { name: "Recorded Ticket 2".to_string(), id: "abc456".to_string(), ..DailyTicketContext::default() },
                 ])
             }
@@ -370,6 +378,12 @@ pub mod mocks {
 mod tests {
     use super::*;
     use serde_json::json;
+    
+    #[test]
+    fn test_count_open_tickets() {
+        let contexts = DailyTicketContexts::default();
+        assert_eq!(contexts.count_open_tickets(), 1);
+    }
 
     #[test]
     fn test_into_slack_blocks_empty_history() {

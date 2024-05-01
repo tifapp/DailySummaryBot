@@ -53,14 +53,14 @@ impl TicketContext {
 
 #[async_trait(?Send)]
 pub trait TicketSummaryClient {
-    async fn fetch_ticket_summary(&self, current_sprint_name: &str, historical_records: &CumulativeSprintContexts, previous_ticket_data: DailyTicketContexts, user_mapping: HashMap<String, String>) -> Result<TicketSummary>;
+    async fn fetch_ticket_summary(&self, current_sprint_name: &str, historical_records: &CumulativeSprintContexts, previous_ticket_data: &DailyTicketContexts, user_mapping: HashMap<String, String>) -> Result<TicketSummary>;
 }
 
 #[async_trait(?Send)]
 impl<T> TicketSummaryClient for T
 where
     T: TicketDetailsClient + PullRequestClient + Sync + Send {
-    async fn fetch_ticket_summary(&self, current_sprint_name: &str, historical_records: &CumulativeSprintContexts, previous_ticket_data: DailyTicketContexts, user_mapping: HashMap<String, String>) -> Result<TicketSummary> {    
+    async fn fetch_ticket_summary(&self, current_sprint_name: &str, historical_records: &CumulativeSprintContexts, previous_ticket_data: &DailyTicketContexts, user_mapping: HashMap<String, String>) -> Result<TicketSummary> {    
         let current_ticket_details = self.fetch_ticket_details().await?;
         let mut current_ticket_ids: Vec<String> = vec![];
 
@@ -244,7 +244,7 @@ mod ticket_summary_tests {
         let mut pull_request_responses = HashMap::new();
         pull_request_responses.insert("https://default-url.com".to_string(), PullRequest::default());
         pull_request_responses.insert("https://merged-url.com".to_string(), PullRequest { merged: true, ..PullRequest::default() });
-        pull_request_responses.insert("https://unmergeable-url.com".to_string(), PullRequest { mergeable: None, ..PullRequest::default() });
+        pull_request_responses.insert("https://unmergeable-url.com".to_string(), PullRequest { mergeable: None, merged: false, ..PullRequest::default() });
 
         let client = MockTicketSummaryClient::new(
             MockTicketDetailsClient::new(vec![
@@ -276,7 +276,7 @@ mod ticket_summary_tests {
         let previous_ticket_data = DailyTicketContexts::default();
         let user_mapping = HashMap::new();
 
-        let summary = client.fetch_ticket_summary("Current Sprint", &historical_records, previous_ticket_data, user_mapping).await.unwrap();
+        let summary = client.fetch_ticket_summary("Current Sprint", &historical_records, &previous_ticket_data, user_mapping).await.unwrap();
 
         let summary_json = serde_json::to_value(&summary).expect("summary should be parseable");
 
@@ -291,7 +291,7 @@ mod ticket_summary_tests {
                 pr: None,
                 added_in_sprint: "Sprint 101".to_string(), 
                 added_on: "04/01/24".to_string(), 
-                last_moved_on: print_current_date(), 
+                last_moved_on: "04/05/24".to_string(), 
                 sprint_age: 2,
                 ..Ticket::default()
             }).unwrap(),
@@ -306,7 +306,7 @@ mod ticket_summary_tests {
                   pr: Some(PullRequest::default()),
                   added_in_sprint: "Sprint 101".to_string(), 
                   added_on: "04/01/24".to_string(), 
-                  last_moved_on: print_current_date(), 
+                  last_moved_on: "04/05/24".to_string(), 
                   sprint_age: 2,
                   ..Ticket::default()
               }).unwrap(),
@@ -319,7 +319,7 @@ mod ticket_summary_tests {
                   pr: Some(PullRequest { merged: true, ..PullRequest::default() }),
                   added_in_sprint: "Sprint 101".to_string(), 
                   added_on: "04/01/24".to_string(), 
-                  last_moved_on: print_current_date(), 
+                  last_moved_on: "04/05/24".to_string(), 
                   sprint_age: 2,
                   ..Ticket::default()
               }).unwrap(),
@@ -334,7 +334,7 @@ mod ticket_summary_tests {
                 pr: Some(PullRequest { mergeable: None, ..PullRequest::default() }),
                 added_in_sprint: "Sprint 101".to_string(), 
                 added_on: "04/01/24".to_string(), 
-                last_moved_on: print_current_date(), 
+                last_moved_on: "04/05/24".to_string(), 
                 sprint_age: 2,
                 ..Ticket::default()
             }).unwrap(),
@@ -357,7 +357,7 @@ mod ticket_summary_tests {
         };
         let user_mapping = HashMap::new();
 
-        let summary = client.fetch_ticket_summary("CurrentSprint", &historical_records, previous_ticket_data, user_mapping).await.unwrap();
+        let summary = client.fetch_ticket_summary("CurrentSprint", &historical_records, &previous_ticket_data, user_mapping).await.unwrap();
 
         assert!(summary.deferred_tickets.iter().any(|ticket| ticket.details.id == "orphan123")); //need to make a test-only impl to check that an orphan ticket exists
     }

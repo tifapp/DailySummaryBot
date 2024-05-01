@@ -116,7 +116,7 @@ impl TicketDetailsClient for Client {
                         }),
                     dependency_of: card.attachments.iter()
                         .find_map(|attachment| {
-                            if attachment.url.contains("trello.com") {
+                            if attachment.url.contains("trello.com/c") {
                                 Some(TicketLink {
                                     name: attachment.name.clone(),
                                     url: attachment.url.clone()

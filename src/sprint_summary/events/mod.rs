@@ -56,8 +56,8 @@ impl SprintCommandParser for SprintEvents {
                                 NaiveDate::parse_from_str(&args[0], "%m/%d/%Y")
                                     .map_err(|e| format!("Failed to parse date: {}", e));
 
-                                if cumulative_sprint_contexts.was_sprint_name_used(&command) {
-                                    Err(anyhow!("Sprint name {} was already used", command))
+                                if cumulative_sprint_contexts.was_sprint_name_used(&args[1]) {
+                                    Err(anyhow!("Sprint name {} was already used", &args[1]))
                                 } else if command.as_str() == "/sprint-kickoff-confirm" {
                                     Ok(SprintCommand::SprintKickoff {
                                         end_date: args[0].clone(),
@@ -105,7 +105,7 @@ impl MapToSprintEvents for LambdaEvent<Value> {
 mod sprint_event_tests {
     use chrono::Local;
 
-    use crate::sprint_summary::sprint_records::CumulativeSprintContext;
+    use crate::{sprint_summary::sprint_records::CumulativeSprintContext, utils::date::print_current_date};
     use super::*;
 
     #[tokio::test]
@@ -172,6 +172,10 @@ mod sprint_event_tests {
 
         let result = event.try_into_sprint_command(&None, &cumulative_contexts).await;
         assert!(result.is_err());
+        match result {
+            Err(e) => assert_eq!(e.to_string(), "Sprint name Sprint 1 was already used", "Unexpected error message: {}", e),
+            _ => panic!("Expected an error but got a successful command parsing"),
+        }
     }
 
     #[tokio::test]
@@ -205,7 +209,7 @@ mod sprint_event_tests {
         let active_context = ActiveSprintContext {
             name: "Sprint 1".to_string(),
             start_date: "01/01/22".to_string(),
-            end_date: "01/01/22".to_string(),
+            end_date: print_current_date(),
             channel_id: "C123456".to_string(),
             ..ActiveSprintContext::default()
         };
@@ -215,7 +219,8 @@ mod sprint_event_tests {
         let event = SprintEvents::ScheduledTrigger;
 
         let result = event.try_into_sprint_command(&mock_client, &cumulative_contexts).await;
-        assert!(matches!(result, Ok(SprintCommand::SprintReview)), "Sprint review should be triggered on the last day");
+        assert!(result.is_ok(), "Scheduled trigger failed");
+        assert_eq!(result.unwrap(), SprintCommand::SprintReview, "Sprint review should be triggered on the last day");
     }
 
     #[tokio::test]
@@ -233,7 +238,8 @@ mod sprint_event_tests {
         let event = SprintEvents::ScheduledTrigger;
 
         let result = event.try_into_sprint_command(&mock_client, &cumulative_contexts).await;
-        assert!(matches!(result, Ok(SprintCommand::DailySummary)), "Daily summary should be generated for active sprints not due for review");
+        assert!(result.is_ok(), "Scheduled trigger failed");
+        assert_eq!(result.unwrap(), SprintCommand::DailySummary, "Daily summary should be generated for active sprints not due for review");
     }
 
     #[tokio::test]
@@ -288,24 +294,5 @@ mod sprint_event_tests {
 
         let result = event.try_into_sprint_command(&mock_client, &cumulative_contexts).await;
         assert!(result.is_err(), "Check-in should fail without an active sprint");
-    }
-
-    #[tokio::test]
-    async fn test_daily_summary_with_active_sprint_last_day() {
-        let today = Local::today().naive_local();
-        let active_context = ActiveSprintContext {
-            name: "Sprint 1".to_string(),
-            start_date: (today - chrono::Duration::days(14)).format("%m/%d/%Y").to_string(),
-            end_date: today.format("%m/%d/%Y").to_string(),
-            channel_id: "C123456".to_string(),
-            ..ActiveSprintContext::default()
-        };
-        let mock_client = Some(active_context);
-        let cumulative_contexts = CumulativeSprintContexts { history: vec![] };
-
-        let event = SprintEvents::ScheduledTrigger;
-
-        let result = event.try_into_sprint_command(&mock_client, &cumulative_contexts).await;
-        assert!(matches!(result, Ok(SprintCommand::SprintReview)), "Should transition to sprint review on the last day");
     }
 }

@@ -237,7 +237,7 @@ pub mod ticket_summary_mocks {
 mod ticket_summary_tests {
     use std::collections::{HashMap, VecDeque};
     use serde_json::json;
-    use crate::sprint_summary::{sprint_records::{CumulativeSprintContexts, DailyTicketContext, DailyTicketContexts}, ticket::{PullRequest, Ticket, TicketDetails}, ticket_sources::{ticket_summary_mocks::{MockPullRequestClient, MockTicketDetailsClient, MockTicketSummaryClient}, TicketSummaryClient}};
+    use crate::{sprint_summary::{sprint_records::{CumulativeSprintContexts, DailyTicketContext, DailyTicketContexts}, ticket::{PullRequest, Ticket, TicketDetails}, ticket_sources::{ticket_summary_mocks::{MockPullRequestClient, MockTicketDetailsClient, MockTicketSummaryClient}, TicketSummaryClient}}, utils::date::print_current_date};
     
     #[tokio::test]
     async fn fetch_summary_combines_data_correctly() {
@@ -291,7 +291,7 @@ mod ticket_summary_tests {
                 pr: None,
                 added_in_sprint: "Sprint 101".to_string(), 
                 added_on: "04/01/24".to_string(), 
-                last_moved_on: "04/24/24".to_string(), 
+                last_moved_on: print_current_date(), 
                 sprint_age: 2,
                 ..Ticket::default()
             }).unwrap(),
@@ -306,7 +306,7 @@ mod ticket_summary_tests {
                   pr: Some(PullRequest::default()),
                   added_in_sprint: "Sprint 101".to_string(), 
                   added_on: "04/01/24".to_string(), 
-                  last_moved_on: "04/24/24".to_string(), 
+                  last_moved_on: print_current_date(), 
                   sprint_age: 2,
                   ..Ticket::default()
               }).unwrap(),
@@ -319,7 +319,7 @@ mod ticket_summary_tests {
                   pr: Some(PullRequest { merged: true, ..PullRequest::default() }),
                   added_in_sprint: "Sprint 101".to_string(), 
                   added_on: "04/01/24".to_string(), 
-                  last_moved_on: "04/24/24".to_string(), 
+                  last_moved_on: print_current_date(), 
                   sprint_age: 2,
                   ..Ticket::default()
               }).unwrap(),
@@ -334,7 +334,7 @@ mod ticket_summary_tests {
                 pr: Some(PullRequest { mergeable: None, ..PullRequest::default() }),
                 added_in_sprint: "Sprint 101".to_string(), 
                 added_on: "04/01/24".to_string(), 
-                last_moved_on: "04/24/24".to_string(), 
+                last_moved_on: print_current_date(), 
                 sprint_age: 2,
                 ..Ticket::default()
             }).unwrap(),

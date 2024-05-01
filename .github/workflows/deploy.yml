@@ -38,9 +38,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install cargo-lambda
     
-    # - name: Install cargo-lambda
-    #   run: |
-    #     cargo test
+    - name: Tests
+      run: |
+        cargo test
 
     - name: Build and deploy lambda
       run: |  

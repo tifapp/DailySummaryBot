@@ -270,6 +270,7 @@ mod tests {
             "deferred_tickets": [],
             "completed_tickets": [],
             "project_ticket_count": 0,
+            "sprint_ticket_count": 0,
             "open_ticket_count": 0,
             "project_ticket_count_in_scope": 0,
             "completed_percentage": null

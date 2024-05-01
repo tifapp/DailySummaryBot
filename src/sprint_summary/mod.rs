@@ -12,7 +12,7 @@ use anyhow::{Result, anyhow};
 use serde::Deserialize;
 use serde_json::Value;
 use crate::utils::date::{days_between, print_current_date};
-use crate::utils::eventbridge::{create_eventbridge_client, EventBridgeExtensions};
+use crate::utils::eventbridge::{create_eventbridge_client, NotificationClient};
 use crate::utils::slack_components::{context_block, header_block, primary_button_block, section_block};
 use self::sprint_records::{
     ActiveSprintContext, CumulativeSprintContext, CumulativeSprintContexts, SprintClient,
@@ -39,17 +39,14 @@ pub trait SprintCommandParser {
 }
 
 impl ActiveSprintContext {
-    //add unit test
     pub fn days_until_end(&self) -> u32 {
         days_between(None, &self.end_date).expect("Days until end should be parseable") as u32
     }
 
-    //add unit test
     pub fn total_days(&self) -> u32 {
         days_between(Some(&self.start_date), &print_current_date()).expect("Total days should be parseable") as u32
     }
     
-    //add unit test
     pub fn time_indicator(&self) -> &str {
         let days_left = self.days_until_end() as f32;
         let total_days = self.total_days() as f32;
@@ -91,7 +88,8 @@ impl SprintCommand {
         ticket_summary: &mut TicketSummary,
         active_sprint_context: &Option<ActiveSprintContext>,
         cumulative_sprint_contexts: &mut CumulativeSprintContexts,
-        sprint_client: &dyn SprintClient
+        sprint_client: &dyn SprintClient,
+        notification_client: &dyn NotificationClient
     ) -> Result<(), anyhow::Error> {
         sprint_client.put_ticket_data(&(ticket_summary).deref().into()).await?;
     
@@ -107,13 +105,11 @@ impl SprintCommand {
                     trello_board: env::var("TRELLO_BOARD_ID")?,
                 };
                 sprint_client.put_sprint_data(&new_sprint_context).await?;
-                let eventbridge_client = create_eventbridge_client().await;
-                eventbridge_client.create_daily_trigger_rule(sprint_name).await?;
+                notification_client.create_daily_trigger_rule(sprint_name).await?;
             },
             SprintCommand::SprintCancel | SprintCommand::SprintEnd | SprintCommand::SprintReview => {
                 if let Some(sprint_data) = active_sprint_context {
-                    let eventbridge_client = create_eventbridge_client().await;
-                    eventbridge_client.delete_daily_trigger_rule(&sprint_data.name).await?;
+                    notification_client.delete_daily_trigger_rule(&sprint_data.name).await?;
     
                     if matches!(self, SprintCommand::SprintEnd | SprintCommand::SprintReview) {
                         let open_tickets_added_count = ticket_summary.open_ticket_count as i32 - sprint_data.open_tickets_count_beginning as i32;
@@ -241,15 +237,49 @@ impl SprintCommand {
 #[cfg(test)]
 mod sprint_event_message_generator_tests {
     use super::*;
-    use crate::sprint_summary::sprint_records::mocks::MockSprintClient;
+    use crate::{sprint_summary::sprint_records::mocks::MockSprintClient, utils::eventbridge::eventbridge_mocks::MockEventBridgeClient};
     use sprint_event_message_generator_tests::sprint_records::ActiveSprintContextClient;
     use std::env;
     use tokio::runtime::Runtime;
+    
+    #[test]
+    fn test_days_until_end() {
+        let sprint_context = ActiveSprintContext {
+            end_date: (chrono::Local::now() + chrono::Duration::days(10)).format("%m/%d/%Y").to_string(),
+            ..Default::default()
+        };
+        assert_eq!(sprint_context.days_until_end(), 10);
+    }
+
+    #[test]
+    fn test_total_days() {
+        let sprint_context = ActiveSprintContext {
+            start_date: (chrono::Local::now() - chrono::Duration::days(5)).format("%m/%d/%Y").to_string(),
+            ..Default::default()
+        };
+        assert_eq!(sprint_context.total_days(), 5);
+    }
+
+    #[test]
+    fn test_time_indicator() {
+        let sprint_context = ActiveSprintContext {
+            start_date: (chrono::Local::now() - chrono::Duration::days(10)).format("%m/%d/%Y").to_string(),
+            end_date: (chrono::Local::now() + chrono::Duration::days(10)).format("%m/%d/%Y").to_string(),
+            ..Default::default()
+        };
+        assert_eq!(sprint_context.time_indicator(), "🌕");
+
+        let sprint_context_advanced = ActiveSprintContext {
+            start_date: (chrono::Local::now() - chrono::Duration::days(30)).format("%m/%d/%Y").to_string(),
+            end_date: chrono::Local::now().format("%m/%d/%Y").to_string(),
+            ..Default::default()
+        };
+        assert_eq!(sprint_context_advanced.time_indicator(), "🌑");
+    }
 
     fn test_runtime() -> Runtime {
         Runtime::new().unwrap()
     }
-
     
     #[test]
     fn test_sprint_preview_message() {
@@ -272,10 +302,12 @@ mod sprint_event_message_generator_tests {
 
     #[test]
     fn test_sprint_kickoff_saves_data() {
+        env::set_var("TRELLO_BOARD_ID", "YourTrelloBoardID");
         let rt = test_runtime();
         let mut ticket_summary = TicketSummary::default();
         let mut cumulative_sprint_contexts = CumulativeSprintContexts::default();
-        let mock_client = MockSprintClient::new(None, Some(cumulative_sprint_contexts.clone()), None);
+        let mock_sprint_client = MockSprintClient::new(None, Some(cumulative_sprint_contexts.clone()), None);
+        let mock_notification_client = MockEventBridgeClient::new();
         let event = SprintCommand::SprintKickoff {
             sprint_name: "New Sprint".to_string(),
             end_date: "12/31/23".to_string(),
@@ -283,8 +315,8 @@ mod sprint_event_message_generator_tests {
         };
 
         rt.block_on(async {
-            let result = event.save_sprint_state(&mut ticket_summary, &None, &mut cumulative_sprint_contexts, &mock_client).await.unwrap();
-            assert!(mock_client.get_sprint_data().await.unwrap().is_some());
+            let result = event.save_sprint_state(&mut ticket_summary, &None, &mut cumulative_sprint_contexts, &mock_sprint_client, &mock_notification_client).await.unwrap();
+            assert!(mock_sprint_client.get_sprint_data().await.unwrap().is_some());
         });
     }
     
@@ -295,12 +327,14 @@ mod sprint_event_message_generator_tests {
         let mut ticket_summary = TicketSummary::default();
         let active_sprint_context = ActiveSprintContext::default();
         let mut cumulative_sprint_contexts = CumulativeSprintContexts::default();
-        let mock_client = MockSprintClient::new(Some(active_sprint_context.clone()), Some(cumulative_sprint_contexts.clone()), None);
+        let mock_sprint_client = MockSprintClient::new(Some(active_sprint_context.clone()), Some(cumulative_sprint_contexts.clone()), None);
+        let mock_notification_client = MockEventBridgeClient::new();
         let event = SprintCommand::SprintReview;
 
         rt.block_on(async {
-            let result = event.save_sprint_state( &mut ticket_summary,&Some(active_sprint_context),&mut cumulative_sprint_contexts, &mock_client).await.unwrap();
-            assert!(mock_client.get_sprint_data().await.unwrap().is_none());
+            mock_notification_client.create_daily_trigger_rule(&active_sprint_context.name).await.expect("Failed to create rule");
+            let result = event.save_sprint_state( &mut ticket_summary,&Some(active_sprint_context),&mut cumulative_sprint_contexts, &mock_sprint_client,&mock_notification_client).await.unwrap();
+            assert!(mock_sprint_client.get_sprint_data().await.unwrap().is_none());
         });
     }
 
@@ -308,7 +342,10 @@ mod sprint_event_message_generator_tests {
     fn test_daily_summary_output() {
         let rt = test_runtime();
         let ticket_summary = TicketSummary::default();
-        let active_sprint_context = ActiveSprintContext::default();
+        let active_sprint_context = ActiveSprintContext {
+            end_date: (chrono::Local::now() + chrono::Duration::try_days(5).unwrap()).format("%m/%d/%Y").to_string(),
+            ..ActiveSprintContext::default()
+        };
         let cumulative_sprint_contexts = CumulativeSprintContexts::default();
         let event = SprintCommand::DailySummary;
 

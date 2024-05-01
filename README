@@ -18,7 +18,6 @@ These are the current enumerated stages for our ticket development:
 - **Done**: Tickets approved and integrated into the next release.
 
 ## Features
-- **Activity Indicators**: Tracks the duration for which tickets remain active.
 - **Blocked PR Indicators**: Highlights PRs that are blocked, facilitating quicker resolutions.
 - **Cumulative Sprint Records**: Maintains records of sprint completion percentages and the number of tickets completed.
 - **Missing Information Warnings**: Alerts for tickets lacking necessary information.
@@ -26,6 +25,10 @@ These are the current enumerated stages for our ticket development:
 - **Daily Summaries**: Provides a formatted daily summary of sprint progress and blockers.
 - **Priority Flags**: Enables ticket prioritization by marking goal-critical tickets.
 - **Interactive Commands**: Supports commands such as `/sprint-kickoff` for starting sprints and checking progress.
+### Activity Indicators
+- **🆕 New Ticket**: Indicates tickets that have been added to the sprint within the last two days.
+- **🐌 Age Indicator**: Represents the number of days a ticket has been active in the sprint, each snail emoji indicating one day of age.
+- **🏁 Goal Ticket**: Marks tickets that are critical goals for the sprint.
 
 ## Usage Details
 - **Sprint Kickoff**: Initiate sprints by issuing the `/sprint-kickoff` command in Slack, which previews the upcoming sprint based on the current Trello board state. Pressing the "Kick Off" button starts the sprint.

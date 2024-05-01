@@ -18,6 +18,7 @@ async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     use std::collections::{HashMap, VecDeque};
 
     use sprint_summary::{events::SprintEvents, SprintCommand};
+    use utils::eventbridge::create_eventbridge_client;
 
 
     info!("Input is: {:?}", event);
@@ -53,9 +54,10 @@ async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
             };
 
             let mut ticket_summary = fetch_client.fetch_ticket_summary(name, &cumulative_sprint_contexts, previous_ticket_data, user_mapping).await?;
+            let notification_client = create_eventbridge_client().await;
 
             let sprint_message = sprint_command.create_sprint_message(&ticket_summary, &active_sprint_context, &cumulative_sprint_contexts).await.expect("should generate sprint message");
-            sprint_command.save_sprint_state(&mut ticket_summary, &active_sprint_context, &mut cumulative_sprint_contexts, &sprint_client).await.expect("should update sprint state");
+            sprint_command.save_sprint_state(&mut ticket_summary, &active_sprint_context, &mut cumulative_sprint_contexts, &sprint_client, &notification_client).await.expect("should update sprint state");
 
             match fetch_client.send_teams_message(&channel_id, &sprint_message, response_url).await {
                 Ok(()) => Ok(json!("Processed command successfully")),

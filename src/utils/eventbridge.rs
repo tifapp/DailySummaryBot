@@ -19,7 +19,7 @@ pub trait NotificationClient {
 #[async_trait(?Send)]
 impl NotificationClient for Client {
     async fn create_daily_trigger_rule(&self, rule_name: &str) -> Result<()> {
-        let cron_expression = "cron(0 19 * * ? *)";
+        let cron_expression = "cron(0 3 * * ? *)";
 
         self.put_rule()
             .name(rule_name)

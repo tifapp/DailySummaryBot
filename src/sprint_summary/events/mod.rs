@@ -53,7 +53,7 @@ impl SprintCommandParser for SprintEvents {
                                     return Err(anyhow!("Text field does not contain enough parts"));
                                 }
                                 
-                                NaiveDate::parse_from_str(&args[0], "%m/%d/%Y")
+                                NaiveDate::parse_from_str(&args[0], "%m/%d/%y")
                                     .map_err(|e| format!("Failed to parse date: {}", e));
 
                                 if cumulative_sprint_contexts.was_sprint_name_used(&args[1]) {

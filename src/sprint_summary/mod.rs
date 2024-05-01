@@ -156,8 +156,8 @@ impl SprintCommand {
                         header_block(&format!("🔭 Sprint {} Preview: {} - {}", sprint_name, print_current_date(), end_date)),
                         section_block(&format!("*{} Tickets*\n*{:?} Days*", ticket_summary.open_ticket_count, days_between(None, end_date)?)),
                     ],
-                    ticket_summary.into_slack_blocks(),
                     cumulative_sprint_contexts.into_slack_blocks(),
+                    ticket_summary.into_slack_blocks(),
                     vec![
                         board_link_block,
                         primary_button_block("Kick Off", "/sprint-kickoff-confirm",  &format!("{} {}", end_date, sprint_name))
@@ -180,13 +180,13 @@ impl SprintCommand {
             },
             SprintCommand::SprintCheckIn => {
                 Ok([vec![
-                    header_block(&format!("{} Sprint {} Check-In: {}", active_sprint_context.as_ref().unwrap().time_indicator(), active_sprint_context.as_ref().unwrap().name, print_current_date())),
+                    header_block(&format!("🛰️ Sprint {} Check-In: {}", active_sprint_context.as_ref().unwrap().name, print_current_date())),
                     section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint.", 
                         ticket_summary.open_ticket_count, 
                         ticket_summary.sprint_ticket_count, 
                         active_sprint_context.as_ref().unwrap().days_until_end()
                     )),
-                    section_block(&format!("\n*{:.2}% of sprint completed.*", ticket_summary.completed_percentage)),
+                    section_block(&format!("\n*{:.2}% of sprint scope completed.*", ticket_summary.completed_percentage)),
                 ],
                     ticket_summary.into_slack_blocks(),
                 vec![
@@ -195,7 +195,10 @@ impl SprintCommand {
             },
             SprintCommand::SprintCancel => {                
                 Ok([vec![
-                    header_block(&format!("Sprint {} is cancelled.", active_sprint_context.as_ref().unwrap().name)),
+                    header_block(&format!("🔴 Sprint {} is cancelled.", active_sprint_context.as_ref().unwrap().name)),
+                    section_block(&format!("\n*{}/{} tickets completed in {} days.*", ticket_summary.completed_tickets.len(), ticket_summary.sprint_ticket_count, active_sprint_context.as_ref().unwrap().total_days())),
+                    section_block(&format!("\n*{:.2}% of sprint scope completed.*\n", ticket_summary.completed_percentage)),
+                    section_block("\nProgress will not be saved.\n"),
                 ],
                     ticket_summary.into_slack_blocks(),
                 vec![
@@ -205,26 +208,41 @@ impl SprintCommand {
             SprintCommand::SprintEnd | SprintCommand::SprintReview => {
                 let mut header = header_block(&format!("🎆 Sprint {} Review: {} - {}", active_sprint_context.as_ref().unwrap().name, print_current_date(), active_sprint_context.as_ref().unwrap().end_date));
                 if self == &SprintCommand::SprintEnd {
-                    header = header_block(&format!("Sprint {} ended early.", active_sprint_context.as_ref().unwrap().name));
+                    header = header_block(&format!("💥 Sprint {} ended early.", active_sprint_context.as_ref().unwrap().name));
                 }
 
+                let completion_emoji = match ticket_summary.completed_percentage {
+                    0.0..=10.0 => "🐢",
+                    10.1..=25.0 => "🥉",
+                    25.1..=50.0 => "🥈",
+                    50.1..=75.0 => "🥇",
+                    75.1..=90.0 => "🏅",
+                    90.1..=99.9 => "🎖️",
+                    100.0 => "🏆",
+                    _ => "⁉️ What happened here?",
+                };
+
                 Ok([vec![
-                    header,
-                    section_block(&format!("\n*{}/{} Tickets* Completed in {} Days*", ticket_summary.completed_tickets.len(), ticket_summary.sprint_ticket_count, active_sprint_context.as_ref().unwrap().total_days())),
-                    section_block(&format!("\n*{:.2}% of sprint completed.*\n", ticket_summary.completed_percentage)),
-                    section_block(&format!("\n{} this sprint.", count_difference(ticket_summary.open_ticket_count as i32, active_sprint_context.as_ref().unwrap().open_tickets_count_beginning as i32))),
-                    section_block(&format!("\n{} project scope.", count_difference(ticket_summary.sprint_ticket_count as i32, active_sprint_context.as_ref().unwrap().in_scope_tickets_count_beginning as i32))),
-                ],ticket_summary.into_slack_blocks(),
+                        header,
+                        section_block(&format!("\n*{}/{} tickets completed in {} days.*", ticket_summary.completed_tickets.len(), ticket_summary.sprint_ticket_count, active_sprint_context.as_ref().unwrap().total_days())),
+                        section_block(&format!("\n*{:.2}% of sprint scope completed.*\n", ticket_summary.completed_percentage)),
+                        header_block(completion_emoji),
+                        section_block(&format!("\n{} this sprint.", count_difference(ticket_summary.open_ticket_count as i32, active_sprint_context.as_ref().unwrap().open_tickets_count_beginning as i32))),
+                        section_block(&format!("\n{} project scope.", count_difference(ticket_summary.sprint_ticket_count as i32, active_sprint_context.as_ref().unwrap().in_scope_tickets_count_beginning as i32))),
+                    ],
                     cumulative_sprint_contexts.into_slack_blocks(),
+                    ticket_summary.into_slack_blocks(),
                     vec![
-                    board_link_block
-                ]].concat())
+                        board_link_block
+                    ]]
+                    .concat()
+                )
             },
             SprintCommand::DailySummary => {
                 Ok([vec![
                     header_block(&format!("{} Daily Summary: {}", active_sprint_context.as_ref().unwrap().time_indicator(), print_current_date())),
                     section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint.", ticket_summary.open_ticket_count, ticket_summary.sprint_ticket_count, active_sprint_context.as_ref().unwrap().days_until_end())),
-                    section_block(&format!("\n*{:.2}% of sprint completed.*", ticket_summary.completed_percentage)),
+                    section_block(&format!("\n*{:.2}% of sprint scope completed.*", ticket_summary.completed_percentage)),
                 ],
                     ticket_summary.into_slack_blocks(),
                  vec![   board_link_block
@@ -245,7 +263,7 @@ mod sprint_event_message_generator_tests {
     #[test]
     fn test_days_until_end() {
         let sprint_context = ActiveSprintContext {
-            end_date: (chrono::Local::now() + chrono::Duration::days(10)).format("%m/%d/%Y").to_string(),
+            end_date: (chrono::Local::now() + chrono::Duration::days(10)).format("%m/%d/%y").to_string(),
             ..Default::default()
         };
         assert_eq!(sprint_context.days_until_end(), 10);
@@ -254,7 +272,7 @@ mod sprint_event_message_generator_tests {
     #[test]
     fn test_total_days() {
         let sprint_context = ActiveSprintContext {
-            start_date: (chrono::Local::now() - chrono::Duration::days(5)).format("%m/%d/%Y").to_string(),
+            start_date: (chrono::Local::now() - chrono::Duration::days(5)).format("%m/%d/%y").to_string(),
             ..Default::default()
         };
         assert_eq!(sprint_context.total_days(), 5);
@@ -263,15 +281,15 @@ mod sprint_event_message_generator_tests {
     #[test]
     fn test_time_indicator() {
         let sprint_context = ActiveSprintContext {
-            start_date: (chrono::Local::now() - chrono::Duration::days(10)).format("%m/%d/%Y").to_string(),
-            end_date: (chrono::Local::now() + chrono::Duration::days(10)).format("%m/%d/%Y").to_string(),
+            start_date: (chrono::Local::now() - chrono::Duration::days(10)).format("%m/%d/%y").to_string(),
+            end_date: (chrono::Local::now() + chrono::Duration::days(10)).format("%m/%d/%y").to_string(),
             ..Default::default()
         };
         assert_eq!(sprint_context.time_indicator(), "🌕");
 
         let sprint_context_advanced = ActiveSprintContext {
-            start_date: (chrono::Local::now() - chrono::Duration::days(30)).format("%m/%d/%Y").to_string(),
-            end_date: chrono::Local::now().format("%m/%d/%Y").to_string(),
+            start_date: (chrono::Local::now() - chrono::Duration::days(30)).format("%m/%d/%y").to_string(),
+            end_date: chrono::Local::now().format("%m/%d/%y").to_string(),
             ..Default::default()
         };
         assert_eq!(sprint_context_advanced.time_indicator(), "🌑");
@@ -343,7 +361,7 @@ mod sprint_event_message_generator_tests {
         let rt = test_runtime();
         let ticket_summary = TicketSummary::default();
         let active_sprint_context = ActiveSprintContext {
-            end_date: (chrono::Local::now() + chrono::Duration::try_days(5).unwrap()).format("%m/%d/%Y").to_string(),
+            end_date: (chrono::Local::now() + chrono::Duration::try_days(5).unwrap()).format("%m/%d/%y").to_string(),
             ..ActiveSprintContext::default()
         };
         let cumulative_sprint_contexts = CumulativeSprintContexts::default();

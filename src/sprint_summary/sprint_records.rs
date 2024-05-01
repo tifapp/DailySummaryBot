@@ -136,22 +136,22 @@ pub struct CumulativeSprintContexts {
 impl CumulativeSprintContexts {
     pub fn into_slack_blocks(&self) -> Vec<Value> {
         if self.history.is_empty() {
-            return vec![]
+            return vec![];
         }
-
-        let mut blocks: Vec<serde_json::Value> = vec![section_block("\n\n*Previous Sprints:*")];
-
-        blocks.extend(self.history.iter().map(|record| {
-            section_block(&format!(
-                "{} - {}: *{} tickets | {:.2}%*",
+    
+        let mut history_text = String::from("\n\n*Previous Sprints:*");
+    
+        for record in &self.history {
+            history_text += &format!(
+                "\n{} - {}: *{} tickets | {:.2}%*",
                 record.start_date,
                 record.end_date,
                 record.completed_tickets_count,
                 record.percent_complete
-            ))
-        }));
-
-        blocks
+            );
+        }
+    
+        vec![section_block(&history_text)]
     }
 
     pub fn count_sprints_since(&self, sprint_name: &str) -> usize {
@@ -403,9 +403,15 @@ mod tests {
         };
         let blocks = contexts.into_slack_blocks();
         let expected_blocks = vec![
-            json!({"type": "section", "text": {"type": "mrkdwn", "text": "\n\n*Previous Sprints:*"}}),
-            json!({"type": "section", "text": {"type": "mrkdwn", "text": "01/01/24 - 01/15/24: *100 tickets | 90.00%*"}}),
-            json!({"type": "section", "text": {"type": "mrkdwn", "text": "02/01/24 - 02/15/24: *97 tickets | 95.50%*"}}),
+            json!(
+                {
+                    "text": {
+                        "text": "\n\n*Previous Sprints:*\n01/01/24 - 01/15/24: *100 tickets | 90.00%*\n02/01/24 - 02/15/24: *97 tickets | 95.50%*",
+                        "type": "mrkdwn"
+                    },
+                    "type": "section"
+                }
+            ),
         ];
         assert_eq!(blocks, expected_blocks);
     }

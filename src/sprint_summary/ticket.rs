@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn test_ticket_name_new_emoji_not_new() {
         let mut ticket = Ticket::default();
-        ticket.added_on = (chrono::Local::now() - chrono::Duration::try_days(5).unwrap()).format("%m/%d/%Y").to_string();
+        ticket.added_on = (chrono::Local::now() - chrono::Duration::try_days(5).unwrap()).format("%m/%d/%y").to_string();
         assert_eq!(ticket.ticket_name_new_emoji(), "");
     }
 
@@ -443,7 +443,7 @@ mod tests {
     #[test]
     fn test_annotated_ticket_name_without_emojis() {
         let mut ticket = Ticket::default();
-        ticket.added_on = (chrono::Local::now() - chrono::Duration::try_days(5).unwrap()).format("%m/%d/%Y").to_string();
+        ticket.added_on = (chrono::Local::now() - chrono::Duration::try_days(5).unwrap()).format("%m/%d/%y").to_string();
         ticket.details.is_goal = false;
         ticket.sprint_age = 0;
         assert_eq!(ticket.annotated_ticket_name(), "Mock Task");

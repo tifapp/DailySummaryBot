@@ -82,7 +82,7 @@ where
         
                 result_tickets.push(Ticket {
                     pr,
-                    moved_out_of_sprint: ticket_details.state <= TicketState::InScope,
+                    moved_out_of_sprint: previous_version.is_some() && ticket_details.state <= TicketState::InScope,
                     sprint_age: context.sprint_age,
                     added_on: context.added_on,
                     added_in_sprint: context.added_in_sprint,

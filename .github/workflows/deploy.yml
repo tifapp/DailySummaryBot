@@ -1,0 +1,54 @@
+name: build-and-deploy
+on: 
+  pull_request: # change to "on push" after we merge
+    types: [opened, synchronize]
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+    
+    - name: Update AWS Lambda env variables
+      run: |
+        aws lambda update-function-configuration \
+          --function-name daily_summary_bot \
+          --environment "Variables={\
+            SLACK_OAUTH='${{ secrets.SLACK_OAUTH }}',\
+            TRELLO_API_KEY='${{ secrets.TRELLO_API_KEY }}',\
+            TRELLO_API_TOKEN='${{ secrets.TRELLO_API_TOKEN }}',\
+            TRELLO_API_SECRET='${{ secrets.TRELLO_API_SECRET }}',\
+            RUST_BACKTRACE='${{ secrets.RUST_BACKTRACE }}',\
+            USER_GITHUB_TOKEN='${{ secrets.USER_GITHUB_TOKEN }}',\
+            SLACK_APP_SIGNING_SECRET='${{ secrets.SLACK_APP_SIGNING_SECRET }}',\
+            TRELLO_BOARD_ID='${{ secrets.TRELLO_BOARD_ID }}'\
+          }"
+
+    - name: Install cargo-lambda
+      run: |
+        python -m pip install --upgrade pip
+        pip install cargo-lambda
+    
+    - name: Tests
+      run: |
+        cargo test
+
+    - name: Build and deploy lambda
+      run: |  
+        echo "OPENSSL_DIR=/usr/include/x86_64-linux-gnu/openssl" >> $GITHUB_ENV
+        echo "RUST_BACKTRACE=full" >> $GITHUB_ENV
+        cargo lambda build --release --verbose --arm64
+        cargo lambda deploy --iam-role "arn:aws:iam::213277979580:role/daily_summary_bot"
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: ${{ secrets.AWS_REGION }}

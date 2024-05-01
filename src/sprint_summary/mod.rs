@@ -90,9 +90,7 @@ impl SprintCommand {
         cumulative_sprint_contexts: &mut CumulativeSprintContexts,
         sprint_client: &dyn SprintClient,
         notification_client: &dyn NotificationClient
-    ) -> Result<(), anyhow::Error> {
-        sprint_client.put_ticket_data(&(ticket_summary).deref().into()).await?;
-    
+    ) -> Result<(), anyhow::Error> {    
         match self {
             SprintCommand::SprintKickoff { sprint_name, end_date, channel_id } => {
                 let new_sprint_context = ActiveSprintContext {
@@ -106,6 +104,7 @@ impl SprintCommand {
                 };
                 sprint_client.put_sprint_data(&new_sprint_context).await?;
                 notification_client.create_daily_trigger_rule(sprint_name).await?;
+                sprint_client.put_ticket_data(&(ticket_summary).deref().into()).await?;
             },
             SprintCommand::SprintCancel | SprintCommand::SprintEnd | SprintCommand::SprintReview => {
                 if let Some(sprint_data) = active_sprint_context {
@@ -127,6 +126,7 @@ impl SprintCommand {
 
                         sprint_client.put_historical_data(cumulative_sprint_contexts).await?;
                         ticket_summary.clear_completed_and_deferred();
+                        sprint_client.put_ticket_data(&(ticket_summary).deref().into()).await?;
                     }
     
                     sprint_client.clear_sprint_data().await?;

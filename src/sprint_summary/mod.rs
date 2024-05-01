@@ -46,7 +46,7 @@ impl ActiveSprintContext {
 
     //add unit test
     pub fn total_days(&self) -> u32 {
-        days_between(Some(&self.start_date), &self.end_date).expect("Total days should be parseable") as u32
+        days_between(Some(&self.start_date), &print_current_date()).expect("Total days should be parseable") as u32
     }
     
     //add unit test
@@ -103,7 +103,7 @@ impl SprintCommand {
                     channel_id: channel_id.to_string(),
                     start_date: print_current_date(),
                     open_tickets_count_beginning: ticket_summary.open_ticket_count,
-                    in_scope_tickets_count_beginning: ticket_summary.in_sprint_scope_ticket_count,
+                    in_scope_tickets_count_beginning: ticket_summary.sprint_ticket_count,
                     trello_board: env::var("TRELLO_BOARD_ID")?,
                 };
                 sprint_client.put_sprint_data(&new_sprint_context).await?;
@@ -117,7 +117,7 @@ impl SprintCommand {
     
                     if matches!(self, SprintCommand::SprintEnd | SprintCommand::SprintReview) {
                         let open_tickets_added_count = ticket_summary.open_ticket_count as i32 - sprint_data.open_tickets_count_beginning as i32;
-                        let tickets_added_to_scope_count = ticket_summary.in_sprint_scope_ticket_count as i32 - sprint_data.in_scope_tickets_count_beginning as i32;
+                        let tickets_added_to_scope_count = ticket_summary.sprint_ticket_count as i32 - sprint_data.in_scope_tickets_count_beginning as i32;
 
                         cumulative_sprint_contexts.history.push(CumulativeSprintContext {
                             name: sprint_data.name.clone(),
@@ -187,10 +187,10 @@ impl SprintCommand {
                     header_block(&format!("{} Sprint {} Check-In: {}", active_sprint_context.as_ref().unwrap().time_indicator(), active_sprint_context.as_ref().unwrap().name, print_current_date())),
                     section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint.", 
                         ticket_summary.open_ticket_count, 
-                        ticket_summary.in_sprint_scope_ticket_count, 
+                        ticket_summary.sprint_ticket_count, 
                         active_sprint_context.as_ref().unwrap().days_until_end()
                     )),
-                    section_block(&format!("\n*{:.2}% of tasks completed.*", ticket_summary.completed_percentage)),
+                    section_block(&format!("\n*{:.2}% of sprint completed.*", ticket_summary.completed_percentage)),
                 ],
                     ticket_summary.into_slack_blocks(),
                 vec![
@@ -214,10 +214,10 @@ impl SprintCommand {
 
                 Ok([vec![
                     header,
-                    section_block(&format!("\n*{}/{} Tickets* Completed in {} Days*", ticket_summary.completed_tickets.len(), ticket_summary.in_sprint_scope_ticket_count, active_sprint_context.as_ref().unwrap().total_days())),
-                    section_block(&format!("\n*{:.2}% of tasks completed.*\n", ticket_summary.completed_percentage)),
-                    section_block(&format!("\n{} sprint.", count_difference(ticket_summary.open_ticket_count as i32, active_sprint_context.as_ref().unwrap().open_tickets_count_beginning as i32))),
-                    section_block(&format!("\n{} project scope.", count_difference(ticket_summary.in_sprint_scope_ticket_count as i32, active_sprint_context.as_ref().unwrap().in_scope_tickets_count_beginning as i32))),
+                    section_block(&format!("\n*{}/{} Tickets* Completed in {} Days*", ticket_summary.completed_tickets.len(), ticket_summary.sprint_ticket_count, active_sprint_context.as_ref().unwrap().total_days())),
+                    section_block(&format!("\n*{:.2}% of sprint completed.*\n", ticket_summary.completed_percentage)),
+                    section_block(&format!("\n{} this sprint.", count_difference(ticket_summary.open_ticket_count as i32, active_sprint_context.as_ref().unwrap().open_tickets_count_beginning as i32))),
+                    section_block(&format!("\n{} project scope.", count_difference(ticket_summary.sprint_ticket_count as i32, active_sprint_context.as_ref().unwrap().in_scope_tickets_count_beginning as i32))),
                 ],ticket_summary.into_slack_blocks(),
                     cumulative_sprint_contexts.into_slack_blocks(),
                     vec![
@@ -227,8 +227,8 @@ impl SprintCommand {
             SprintCommand::DailySummary => {
                 Ok([vec![
                     header_block(&format!("{} Daily Summary: {}", active_sprint_context.as_ref().unwrap().time_indicator(), print_current_date())),
-                    section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint.", ticket_summary.open_ticket_count, ticket_summary.in_sprint_scope_ticket_count, active_sprint_context.as_ref().unwrap().days_until_end())),
-                    section_block(&format!("\n*{:.2}% of tasks completed.*", ticket_summary.completed_percentage)),
+                    section_block(&format!("*{}/{} Tickets* Open.\n*{} Days* Remain In Sprint.", ticket_summary.open_ticket_count, ticket_summary.sprint_ticket_count, active_sprint_context.as_ref().unwrap().days_until_end())),
+                    section_block(&format!("\n*{:.2}% of sprint completed.*", ticket_summary.completed_percentage)),
                 ],
                     ticket_summary.into_slack_blocks(),
                  vec![   board_link_block
@@ -259,7 +259,7 @@ mod sprint_event_message_generator_tests {
         let active_sprint_context = ActiveSprintContext::default();
         let event = SprintCommand::SprintPreview {
             sprint_name: "My Sprint".to_string(),
-            end_date: "2023-12-31".to_string(),
+            end_date: "12/31/23".to_string(),
             channel_id: "XYZ123".to_string(),
         };
 
@@ -278,7 +278,7 @@ mod sprint_event_message_generator_tests {
         let mock_client = MockSprintClient::new(None, Some(cumulative_sprint_contexts.clone()), None);
         let event = SprintCommand::SprintKickoff {
             sprint_name: "New Sprint".to_string(),
-            end_date: "2023-12-31".to_string(),
+            end_date: "12/31/23".to_string(),
             channel_id: "XYZ123".to_string(),
         };
 

@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 
-use lambda_runtime::tracing::info;
 use serde::Serialize;
 use serde_json::Value;
 use crate::utils::slack_components::{divider_block, list_block, section_block};
@@ -27,10 +26,10 @@ pub struct TicketSummary {
     open_tickets: VecDeque<Ticket>,
     pub deferred_tickets: VecDeque<Ticket>,
     pub completed_tickets: VecDeque<Ticket>,
-    pub in_sprint_scope_ticket_count: u32,
+    pub sprint_ticket_count: u32,
     pub open_ticket_count: u32,
     project_ticket_count: u32,
-    in_project_scope_ticket_count: u32,
+    project_ticket_count_in_scope: u32,
     pub completed_percentage: f64,
 }
 
@@ -49,21 +48,26 @@ impl From<Vec<Ticket>> for TicketSummary {
         let mut completed_tickets = VecDeque::new();
         let mut deferred_tickets = VecDeque::new();
 
+        let mut sprint_ticket_count = 0;
+        let mut project_ticket_count_in_scope = 0;
+
         let project_ticket_count = tickets.len() as u32;
-        let mut open_ticket_count = 0;
-        let mut in_project_scope_ticket_count = 0;
         
         for ticket in tickets {
             if ticket.details.state == TicketState::Done {
+                sprint_ticket_count += 1;
                 completed_tickets.prioritized_push(ticket);
-            } else if ticket.details.state <= TicketState::InScope || ticket.out_of_sprint {
+            } else if ticket.details.state <= TicketState::InScope || ticket.moved_out_of_sprint {
                 if ticket.details.state == TicketState::InScope {
-                    in_project_scope_ticket_count += 1;
-                } else {
+                    project_ticket_count_in_scope += 1;
+                }
+                
+                if ticket.moved_out_of_sprint {
+                    sprint_ticket_count += 1;
                     deferred_tickets.prioritized_push(ticket);
                 }
             } else {
-                open_ticket_count += 1;
+                sprint_ticket_count += 1;
                 match &ticket.pr {
                     Some(pr) if !pr.is_draft && (pr.mergeable != Some(true) || !pr.failing_check_runs.is_empty()) => {
                         blocked_prs.prioritized_push(ticket);
@@ -79,16 +83,16 @@ impl From<Vec<Ticket>> for TicketSummary {
         }
 
         TicketSummary {
-            completed_percentage: completed_tickets.len() as f64 / (deferred_tickets.len() as f64 + open_ticket_count as f64),
             blocked_prs,
             open_prs,
             open_tickets,
-            deferred_tickets,
-            in_sprint_scope_ticket_count: completed_tickets.len() as u32 + open_ticket_count as u32,
-            completed_tickets,
+            sprint_ticket_count,
+            completed_percentage: completed_tickets.len() as f64 / sprint_ticket_count as f64,
             project_ticket_count,
-            in_project_scope_ticket_count,
-            open_ticket_count,
+            project_ticket_count_in_scope,
+            open_ticket_count: sprint_ticket_count - completed_tickets.len() as u32 - deferred_tickets.len() as u32,
+            completed_tickets,
+            deferred_tickets,
         }
     }
 }
@@ -124,7 +128,7 @@ impl TicketSummary {
         }
 
         blocks.push(divider_block());
-        blocks.push(section_block(&format!("{} Tickets Left In Scope", self.in_project_scope_ticket_count)));
+        blocks.push(section_block(&format!("{} Tickets Left In Scope", self.project_ticket_count_in_scope)));
 
         blocks
     }
@@ -206,8 +210,8 @@ pub mod mocks {
                 ]),
                 project_ticket_count: 10,
                 open_ticket_count: 20,
-                in_sprint_scope_ticket_count: 15,
-                in_project_scope_ticket_count: 80,
+                sprint_ticket_count: 15,
+                project_ticket_count_in_scope: 80,
                 completed_percentage: 0.5,
             }
         }
@@ -267,7 +271,7 @@ mod tests {
             "completed_tickets": [],
             "project_ticket_count": 0,
             "open_ticket_count": 0,
-            "in_project_scope_ticket_count": 0,
+            "project_ticket_count_in_scope": 0,
             "completed_percentage": null
           }));
 
@@ -330,8 +334,13 @@ mod tests {
             details: TicketDetails { name: "In Scope Ticket".to_string(), state: TicketState::InScope, ..TicketDetails::default() },
             ..Ticket::default()
         };
+        let in_scope_and_deferred_ticket = Ticket {
+            moved_out_of_sprint: true,
+            details: TicketDetails { name: "Ticket Moved To In Scope".to_string(), state: TicketState::InScope, ..TicketDetails::default() },
+            ..Ticket::default()
+        };
         let deferred_ticket = Ticket {
-            out_of_sprint: true,
+            moved_out_of_sprint: true,
             details: TicketDetails { name: "Deferred Ticket".to_string(), ..TicketDetails::default() },
             ..Ticket::default()
         };
@@ -344,17 +353,19 @@ mod tests {
             pr_open_ticket.clone(),
             pr_blocked_ticket_failing_checks.clone(),
             pr_blocked_ticket_not_mergable.clone(),
-            in_scope_ticket.clone(),
+            in_scope_and_deferred_ticket.clone(),
             deferred_ticket.clone(),
+            in_scope_ticket.clone(),
         ];
 
         let summary = TicketSummary::from(tickets);
         
         let summary_json = serde_json::to_value(&summary).expect("summary should be parseable");
 
-        assert_eq!(summary_json["project_ticket_count"], 9, "Total number of tickets should be 9");
+        assert_eq!(summary_json["project_ticket_count"], 10, "Total number of tickets should be 9");
+        assert_eq!(summary_json["project_ticket_count_in_scope"], 2, "Total number of in-scope tickets should be 1");
+        assert_eq!(summary_json["sprint_ticket_count"], 9, "Total number of sprint tickets should be 8");
         assert_eq!(summary_json["open_ticket_count"], 6, "Total number of open tickets should be 6");
-        assert_eq!(summary_json["in_project_scope_ticket_count"], 1, "Total number of in-scope tickets should be 1");
         assert_eq!(summary_json["completed_percentage"], 1.0/9.0, "Completed percentage should match");
         assert_eq!(summary_json["completed_tickets"], json!(vec![serde_json::to_value(&completed_ticket).unwrap()]), "Completed tickets should match");
         assert_eq!(summary_json["open_tickets"], json!(vec![
@@ -364,6 +375,6 @@ mod tests {
         ]), "Open tickets should match");
         assert_eq!(summary_json["open_prs"], json!(vec![serde_json::to_value(&pr_open_ticket).unwrap()]), "Tickets with open PRs should match");
         assert_eq!(summary_json["blocked_prs"], json!(vec![serde_json::to_value(&pr_blocked_ticket_failing_checks).unwrap(), serde_json::to_value(&pr_blocked_ticket_not_mergable).unwrap()]), "Tickets with blocked PRs should match");
-        assert_eq!(summary_json["deferred_tickets"], json!(vec![serde_json::to_value(&deferred_ticket).unwrap()]), "Deferred tickets should match");
+        assert_eq!(summary_json["deferred_tickets"], json!(vec![serde_json::to_value(&in_scope_and_deferred_ticket).unwrap(), serde_json::to_value(&deferred_ticket).unwrap()]), "Deferred tickets should match");
     }
 }

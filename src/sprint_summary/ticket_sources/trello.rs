@@ -2,12 +2,13 @@ use std::{collections::HashMap, env};
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
 use anyhow::{Result, Error};
-use crate::{sprint_summary::{ticket::TicketDetails, ticket_state::TicketState}, tracing::info};
+use crate::{sprint_summary::{ticket::{TicketDetails, TicketLink}, ticket_state::TicketState}, tracing::info};
 
 use super::TicketDetailsClient;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TrelloAttachment {
+    name: String,
     url: String,
 }
 
@@ -33,6 +34,13 @@ struct TrelloCard {
     desc: Option<String>,
     attachments: Vec<TrelloAttachment>,
     badges: TrelloBadges,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TrelloCardLink {
+    id: String,
+    name: String,
+    url: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -102,6 +110,17 @@ impl TicketDetailsClient for Client {
                         .find_map(|attachment| {
                             if attachment.url.contains("github.com") && attachment.url.contains("/pull/") {
                                 Some(attachment.url.clone())
+                            } else {
+                                None
+                            }
+                        }),
+                    dependency_of: card.attachments.iter()
+                        .find_map(|attachment| {
+                            if attachment.url.contains("trello.com") {
+                                Some(TicketLink {
+                                    name: attachment.name.clone(),
+                                    url: attachment.url.clone()
+                                })
                             } else {
                                 None
                             }

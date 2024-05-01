@@ -35,6 +35,13 @@ pub struct TicketDetails {
     pub checklist_items: u32,
     pub checked_checklist_items: u32,
     pub pr_url: Option<String>,
+    pub dependency_of: Option<TicketLink>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TicketLink {
+    pub name: String,
+    pub url: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -43,7 +50,7 @@ pub struct Ticket {
     pub added_in_sprint: String,
     pub added_on: String,
     pub last_moved_on: String,
-    pub out_of_sprint: bool,
+    pub moved_out_of_sprint: bool,
     pub members: Vec<String>,
     pub details: TicketDetails,
     pub pr: Option<PullRequest>,
@@ -97,7 +104,7 @@ impl Ticket {
     }
 
     fn ticket_name_block(&self) -> Value {
-        link_element(&self.details.url, &self.annotated_ticket_name(), Some(json!({"bold": true, "strike": self.out_of_sprint})))
+        link_element(&self.details.url, &self.annotated_ticket_name(), Some(json!({"bold": true, "strike": self.moved_out_of_sprint})))
     }    
 
     fn missing_assignees_warning(&self) -> Option<String> {
@@ -220,6 +227,18 @@ impl Ticket {
 
         blocks
     }
+    
+    fn dependency_blocks(&self) -> Vec<Value> {
+        let mut blocks = vec![];
+        
+        if let Some(dependency) = &self.details.dependency_of {
+            blocks.push(text_element("\n", None));
+            blocks.push(text_element("Part of ", None));
+            blocks.push(link_element(&dependency.url, &dependency.name, None));
+        }
+
+        blocks
+    }
 
     fn checklist_blocks(&self) -> Vec<Value> {
         let mut blocks = vec![];
@@ -254,6 +273,8 @@ impl Ticket {
         
         ticket_elements.extend(self.pr_blocks());
         
+        ticket_elements.extend(self.dependency_blocks());
+        
         ticket_elements.extend(self.checklist_blocks());
 
         ticket_elements.extend(self.member_blocks());
@@ -275,6 +296,7 @@ impl From<&Ticket> for DailyTicketContext {
             added_on: ticket.added_on.clone(),
             added_in_sprint: ticket.added_in_sprint.clone(),
             last_moved_on: ticket.last_moved_on.clone(),
+            dependency_of: ticket.details.dependency_of.clone()
         }
     }
 }
@@ -285,7 +307,7 @@ impl From<&DailyTicketContext> for Ticket {
             members: vec![],
             pr: None,
             sprint_age: 0,
-            out_of_sprint: true,
+            moved_out_of_sprint: true,
             added_in_sprint: record.added_in_sprint.clone(),
             added_on: record.added_on.clone(),
             last_moved_on: record.last_moved_on.clone(),
@@ -300,7 +322,8 @@ impl From<&DailyTicketContext> for Ticket {
                 checklist_items: 0,
                 checked_checklist_items: 0,  
                 member_ids: vec![],
-                pr_url: None,        
+                pr_url: None,      
+                dependency_of: record.dependency_of.clone()  
             }
         }
     }
@@ -341,6 +364,7 @@ pub mod mocks {
                 id: "abc123".to_string(),
                 is_goal: false,
                 pr_url: Some("http://github.com/example".to_string()),
+                dependency_of: None,
             }
         }
     }
@@ -348,7 +372,7 @@ pub mod mocks {
     impl Default for Ticket {
         fn default() -> Self {
             Ticket {
-                out_of_sprint: false,
+                moved_out_of_sprint: false,
                 sprint_age: 1,
                 added_on: "04/20/24".to_string(),
                 details: TicketDetails::default(),
@@ -428,7 +452,7 @@ mod tests {
     #[test]
     fn test_ticket_name_block_deferred() {
         let mut ticket = Ticket::default();
-        ticket.out_of_sprint = true;
+        ticket.moved_out_of_sprint = true;
         let expected_blocks = json!({
             "style": {
                 "bold": true,
@@ -777,6 +801,43 @@ mod tests {
         ]);
 
         assert_eq!(serde_json::to_value(ticket.pr_blocks()).unwrap(), expected_blocks);
+    }
+    
+    #[test]
+    fn test_dependency_blocks_exist() {
+        let mut ticket = Ticket::default();
+        ticket.details.dependency_of = Some(TicketLink {
+            name: "Greater Objective".to_string(),
+            url: "test.com".to_string()
+        });
+
+        let expected_blocks = json!([
+            {
+                "style": {},
+                "text": "\n",
+                "type": "text"
+            },
+            {
+                "style": {},
+                "text": "Part of ",
+                "type": "text"
+            },
+            {
+                "style": {},
+                "text": "Greater Objective",
+                "url": "test.com",
+                "type": "link"
+            }
+        ]);
+
+        assert_eq!(serde_json::to_value(ticket.dependency_blocks()).unwrap(), expected_blocks);
+    }
+
+    #[test]
+    fn test_dependency_blocks_does_not_exist() {
+        let mut ticket = Ticket::default();
+        ticket.details.dependency_of = None;
+        assert!(ticket.dependency_blocks().is_empty());
     }
 
     #[test]

@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use crate::utils::date::print_current_date;
 use super::sprint_records::{CumulativeSprintContexts, DailyTicketContext, DailyTicketContexts};
 use super::ticket::{Ticket, TicketDetails, PullRequest};
+use super::ticket_state::TicketState;
 use super::ticket_summary::TicketSummary;
 
 pub trait PullRequestClient {
@@ -81,7 +82,7 @@ where
         
                 result_tickets.push(Ticket {
                     pr,
-                    out_of_sprint: false,
+                    moved_out_of_sprint: ticket_details.state <= TicketState::InScope,
                     sprint_age: context.sprint_age,
                     added_on: context.added_on,
                     added_in_sprint: context.added_in_sprint,

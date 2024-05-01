@@ -8,6 +8,7 @@ use serde_json::{from_value, Value};
 use crate::utils::s3::JsonStorageClient;
 use crate::utils::slack_components::section_block;
 
+use super::ticket::TicketLink;
 use super::ticket_state::TicketState;
 
 #[async_trait(?Send)]
@@ -81,6 +82,7 @@ pub struct DailyTicketContext {
     pub added_on: String,
     pub added_in_sprint: String,
     pub last_moved_on: String,
+    pub dependency_of: Option<TicketLink>,
 }
 
 //Ticket records update daily
@@ -258,6 +260,7 @@ pub mod mocks {
                 name: "Recorded Ticket".to_string(),
                 url: "http://example.com/ticket2".to_string(),
                 is_goal: false,
+                dependency_of: None,
             }
         }
     }

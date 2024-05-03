@@ -30,7 +30,7 @@ impl<T> SprintMemberClient for T where T: JsonStorageClient, {
 }
 
 //Sprint record is updated at the beginning of each sprint
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct ActiveSprintContext {
     pub name: String,
     pub start_date: String,

@@ -92,6 +92,10 @@ impl TicketDetailsClient for Client {
         let lists = fetch_trello_lists(&self).await?;
         let list_name_to_ticket_state_map: HashMap<_, _> = lists.into_iter().map(|list| (list.id, TicketState::from_str(&list.name))).collect();
         let cards = fetch_trello_cards(&self).await?;
+
+        let card_url_to_name_map: HashMap<String, String> = cards.iter()
+            .map(|card| (card.url.clone(), card.name.clone()))
+            .collect();
         
         Ok(cards.into_iter().filter_map(|card| {
             list_name_to_ticket_state_map.get(&card.idList).and_then(|list_name_option| {
@@ -118,7 +122,7 @@ impl TicketDetailsClient for Client {
                         .find_map(|attachment| {
                             if attachment.url.contains("trello.com/c") {
                                 Some(TicketLink {
-                                    name: attachment.name.clone(),
+                                    name: card_url_to_name_map.get(&attachment.url).unwrap_or(&attachment.name).clone(),
                                     url: attachment.url.clone()
                                 })
                             } else {

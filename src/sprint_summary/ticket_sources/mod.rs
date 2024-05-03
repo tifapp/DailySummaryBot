@@ -85,6 +85,7 @@ where
                     moved_out_of_sprint: previous_version.is_some() && ticket_details.state <= TicketState::InScope,
                     sprint_age: context.sprint_age,
                     added_on: context.added_on,
+                    is_new: previous_version.is_none(),
                     added_in_sprint: context.added_in_sprint,
                     last_moved_on: context.last_moved_on,
                     members: ticket_details.member_ids.iter()
@@ -237,7 +238,7 @@ pub mod ticket_summary_mocks {
 mod ticket_summary_tests {
     use std::collections::{HashMap, VecDeque};
     use serde_json::json;
-    use crate::{sprint_summary::{sprint_records::{CumulativeSprintContexts, DailyTicketContext, DailyTicketContexts}, ticket::{PullRequest, Ticket, TicketDetails}, ticket_sources::{ticket_summary_mocks::{MockPullRequestClient, MockTicketDetailsClient, MockTicketSummaryClient}, TicketSummaryClient}}, utils::date::print_current_date};
+    use crate::{sprint_summary::{sprint_records::{CumulativeSprintContexts, DailyTicketContext, DailyTicketContexts}, ticket::{PullRequest, Ticket, TicketDetails}, ticket_sources::{ticket_summary_mocks::{MockPullRequestClient, MockTicketDetailsClient, MockTicketSummaryClient}, TicketSummaryClient}, ticket_state::TicketState}, utils::date::print_current_date};
     
     #[tokio::test]
     async fn fetch_summary_combines_data_correctly() {
@@ -251,6 +252,8 @@ mod ticket_summary_tests {
                 TicketDetails {
                     name: "Mock Task No PR".to_string(),
                     pr_url: None,
+                    id: "mockid".to_string(),
+                    state: TicketState::InProgress,
                     ..TicketDetails::default()
                 },
                 TicketDetails {
@@ -273,7 +276,16 @@ mod ticket_summary_tests {
         );
         
         let historical_records = CumulativeSprintContexts::default();
-        let previous_ticket_data = DailyTicketContexts::default();
+        let previous_ticket_data = DailyTicketContexts {
+            tickets: VecDeque::from(vec![
+                DailyTicketContext {
+                    state: TicketState::InProgress,
+                    last_moved_on: "04/15/24".to_string(),
+                    id: "mockid".to_string(), 
+                    ..DailyTicketContext::default()
+                }
+            ])
+        };
         let user_mapping = HashMap::new();
 
         let summary = client.fetch_ticket_summary("Current Sprint", &historical_records, &previous_ticket_data, user_mapping).await.unwrap();
@@ -283,59 +295,64 @@ mod ticket_summary_tests {
         assert_eq!(summary_json["open_ticket_count"], 4, "Total number of tickets should be 4");
         assert_eq!(summary_json["open_tickets"], json!(vec![
             serde_json::to_value(&Ticket {
+                is_new: false,
                 details: TicketDetails {
                     name: "Mock Task No PR".to_string(),
                     pr_url: None,
+                    id: "mockid".to_string(),
                     ..TicketDetails::default()
                 },
                 pr: None,
                 added_in_sprint: "Sprint 101".to_string(), 
                 added_on: "04/01/24".to_string(), 
-                last_moved_on: "04/05/24".to_string(), 
+                last_moved_on: "04/15/24".to_string(),
                 sprint_age: 2,
                 ..Ticket::default()
             }).unwrap(),
         ]), "Fetched open tickets should match");
         assert_eq!(summary_json["open_prs"], json!(vec![
             serde_json::to_value(&Ticket {
+                  is_new: true,
                   details: TicketDetails {
                       name: "Mock Task Default".to_string(),
                       pr_url: Some("https://default-url.com".to_string()),
                       ..TicketDetails::default()
                   },
                   pr: Some(PullRequest::default()),
-                  added_in_sprint: "Sprint 101".to_string(), 
-                  added_on: "04/01/24".to_string(), 
-                  last_moved_on: "04/05/24".to_string(), 
-                  sprint_age: 2,
+                  added_in_sprint: "Current Sprint".to_string(), 
+                  added_on: print_current_date(), 
+                  last_moved_on: print_current_date(), 
+                  sprint_age: 0,
                   ..Ticket::default()
               }).unwrap(),
               serde_json::to_value(&Ticket {
+                  is_new: true,
                   details: TicketDetails {
                       name: "Mock Task Merged".to_string(),
                       pr_url: Some("https://merged-url.com".to_string()),
                       ..TicketDetails::default()
                   },
                   pr: Some(PullRequest { merged: true, ..PullRequest::default() }),
-                  added_in_sprint: "Sprint 101".to_string(), 
-                  added_on: "04/01/24".to_string(), 
-                  last_moved_on: "04/05/24".to_string(), 
-                  sprint_age: 2,
+                  added_in_sprint: "Current Sprint".to_string(), 
+                  added_on: print_current_date(), 
+                  last_moved_on: print_current_date(), 
+                  sprint_age: 0,
                   ..Ticket::default()
               }).unwrap(),
         ]), "Fetched open pr tickets should match");
         assert_eq!(summary_json["blocked_prs"], json!(vec![
             serde_json::to_value(&Ticket {
+                is_new: true,
                 details: TicketDetails {
                     name: "Mock Task Unmergeable".to_string(),
                     pr_url: Some("https://unmergeable-url.com".to_string()),
                     ..TicketDetails::default()
                 },
                 pr: Some(PullRequest { mergeable: None, ..PullRequest::default() }),
-                added_in_sprint: "Sprint 101".to_string(), 
-                added_on: "04/01/24".to_string(), 
-                last_moved_on: "04/05/24".to_string(), 
-                sprint_age: 2,
+                added_in_sprint: "Current Sprint".to_string(), 
+                added_on: print_current_date(), 
+                last_moved_on: print_current_date(), 
+                sprint_age: 0,
                 ..Ticket::default()
             }).unwrap(),
         ]), "Fetched blocked pr tickets should match");

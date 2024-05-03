@@ -103,6 +103,9 @@ impl SprintCommand {
                 notification_client.create_daily_trigger_rule(sprint_name).await?;
                 sprint_client.put_ticket_data(&(ticket_summary).deref().into()).await?;
             },
+            SprintCommand::DailySummary => {
+                sprint_client.put_ticket_data(&(ticket_summary).deref().into()).await?;
+            },
             SprintCommand::SprintCancel | SprintCommand::SprintEnd | SprintCommand::SprintReview => {
                 if let Some(sprint_data) = active_sprint_context {
                     notification_client.delete_daily_trigger_rule(&sprint_data.name).await?;
@@ -278,7 +281,7 @@ mod sprint_event_message_generator_tests {
     use super::*;
     use crate::{sprint_summary::sprint_records::mocks::MockSprintClient, utils::eventbridge::eventbridge_mocks::MockEventBridgeClient};
     use chrono_tz::US::Pacific;
-    use sprint_event_message_generator_tests::sprint_records::ActiveSprintContextClient;
+    use sprint_event_message_generator_tests::sprint_records::{ActiveSprintContextClient, DailyTicketContextClient};
     use std::env;
     use tokio::runtime::Runtime;
     
@@ -350,15 +353,55 @@ mod sprint_event_message_generator_tests {
         let mut cumulative_sprint_contexts = CumulativeSprintContexts::default();
         let mock_sprint_client = MockSprintClient::new(None, Some(cumulative_sprint_contexts.clone()), None);
         let mock_notification_client = MockEventBridgeClient::new();
+        let end_date = (chrono::Local::now().with_timezone(&Pacific) + chrono::Duration::try_days(10).unwrap()).date_naive().format("%m/%d/%y").to_string();
         let event = SprintCommand::SprintKickoff {
             sprint_name: "New Sprint".to_string(),
-            end_date: "12/31/23".to_string(),
+            end_date: end_date.clone(),
             channel_id: "XYZ123".to_string(),
         };
 
         rt.block_on(async {
             let _ = event.save_sprint_state(&mut ticket_summary, &None, &mut cumulative_sprint_contexts, &mock_sprint_client, &mock_notification_client).await.unwrap();
-            assert!(mock_sprint_client.get_sprint_data().await.unwrap().is_some());
+            assert_eq!(mock_sprint_client.get_sprint_data().await.unwrap().unwrap(), ActiveSprintContext { 
+                name: "New Sprint".to_string(), 
+                start_date: print_current_date(), 
+                end_date, 
+                channel_id: "XYZ123".to_string(), 
+                trello_board: "YourTrelloBoardID".to_string(), 
+                open_tickets_count_beginning: 20, 
+                in_scope_tickets_count_beginning: 15
+            });
+        });
+    }
+
+    #[test]
+    fn test_sprint_cancel_clears_data() {
+        let rt = test_runtime();
+        let mut ticket_summary = TicketSummary::default();
+        let mut cumulative_sprint_contexts = CumulativeSprintContexts::default();
+        let active_sprint_context = Some(ActiveSprintContext::default());
+        let mock_sprint_client = MockSprintClient::new(active_sprint_context.clone(), Some(cumulative_sprint_contexts.clone()), None);
+        let mock_notification_client = MockEventBridgeClient::new();
+        let event = SprintCommand::SprintCancel;
+
+        rt.block_on(async {
+            let _ = mock_notification_client.create_daily_trigger_rule("Sprint 1").await;
+            let _ = event.save_sprint_state(&mut ticket_summary, &active_sprint_context.clone(), &mut cumulative_sprint_contexts, &mock_sprint_client, &mock_notification_client).await.unwrap();
+            assert_eq!(mock_sprint_client.get_sprint_data().await.unwrap(), None);
+        });
+    }
+
+    #[test]
+    fn test_daily_summary_saves_ticket_data() {
+        let rt = test_runtime();
+        let mut ticket_summary = TicketSummary::default();
+        let mock_sprint_client = MockSprintClient::new(None, None, None);
+        let mock_notification_client = MockEventBridgeClient::new();
+        let event = SprintCommand::DailySummary;
+
+        rt.block_on(async {
+            let _ = event.save_sprint_state(&mut ticket_summary, &None, &mut CumulativeSprintContexts::default(), &mock_sprint_client, &mock_notification_client).await.unwrap();
+            assert!(mock_sprint_client.get_ticket_data().await.unwrap().is_some());
         });
     }
     

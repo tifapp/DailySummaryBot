@@ -53,6 +53,7 @@ pub struct TicketLink {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Ticket {
     pub sprint_age: usize,
+    pub is_new: bool,
     pub added_in_sprint: String,
     pub added_on: String,
     pub last_moved_on: String,
@@ -64,10 +65,8 @@ pub struct Ticket {
 
 impl Ticket {
     fn ticket_name_new_emoji(&self) -> String {
-        if let Ok(days) = days_between(Some(&self.added_on), &print_current_date()) {
-            if days <= 2 {
-                return "🆕".to_string();
-            }
+        if self.is_new {
+            return "🆕".to_string();
         }
 
         "".to_string()
@@ -316,6 +315,7 @@ impl From<&DailyTicketContext> for Ticket {
             moved_out_of_sprint: true,
             added_in_sprint: record.added_in_sprint.clone(),
             added_on: record.added_on.clone(),
+            is_new: false,
             last_moved_on: record.last_moved_on.clone(),
             details: TicketDetails {            
                 id: record.id.clone(),
@@ -381,6 +381,7 @@ pub mod mocks {
                 moved_out_of_sprint: false,
                 sprint_age: 1,
                 added_on: "04/20/24".to_string(),
+                is_new: false,
                 details: TicketDetails::default(),
                 members: vec![],
                 pr: Some(PullRequest::default()),
@@ -451,14 +452,14 @@ mod tests {
     #[test]
     fn test_ticket_name_new_emoji_new() {
         let mut ticket = Ticket::default();
-        ticket.added_on = print_current_date();
+        ticket.is_new = true;
         assert_eq!(ticket.ticket_name_new_emoji(), "🆕");
     }
 
     #[test]
     fn test_ticket_name_new_emoji_not_new() {
         let mut ticket = Ticket::default();
-        ticket.added_on = (chrono::Local::now() - chrono::Duration::try_days(5).unwrap()).format("%m/%d/%y").to_string();
+        ticket.is_new = false;
         assert_eq!(ticket.ticket_name_new_emoji(), "");
     }
 
@@ -493,7 +494,7 @@ mod tests {
     #[test]
     fn test_annotated_ticket_name_with_emojis() {
         let mut ticket = Ticket::default();
-        ticket.added_on = print_current_date();
+        ticket.is_new = true;
         ticket.details.is_goal = true;
         ticket.sprint_age = 2;
         assert_eq!(ticket.annotated_ticket_name(), "🆕🐌🐌🏁 Mock Task");

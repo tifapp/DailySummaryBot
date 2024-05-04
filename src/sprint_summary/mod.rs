@@ -40,13 +40,13 @@ impl ActiveSprintContext {
         days_between(None, &self.end_date).expect("Days until end should be parseable") as u32
     }
 
-    pub fn total_days(&self) -> u32 {
+    pub fn total_days_elapsed(&self) -> u32 {
         days_between(Some(&self.start_date), &print_current_date()).expect("Total days should be parseable") as u32
     }
     
-    pub fn time_indicator(&self) -> &str {
+    pub fn remaining_time_indicator(&self) -> &str {
         let days_left = self.days_until_end() as f32;
-        let total_days = self.total_days() as f32;
+        let total_days = days_between(Some(&self.start_date), &self.end_date).expect("Days should be parseable") as f32;
         if total_days == 0.0 {
             return "🌕";
         }
@@ -203,7 +203,7 @@ impl SprintCommand {
             SprintCommand::SprintCancel => {                
                 Ok([vec![
                     header_block(&format!("🔴 Sprint {} is cancelled.", active_sprint_context.as_ref().unwrap().name)),
-                    section_block(&format!("\n*{}/{} tickets completed in {} days.*", ticket_summary.completed_tickets.len(), ticket_summary.sprint_ticket_count, active_sprint_context.as_ref().unwrap().total_days())),
+                    section_block(&format!("\n*{}/{} tickets completed in {} days.*", ticket_summary.completed_tickets.len(), ticket_summary.sprint_ticket_count, active_sprint_context.as_ref().unwrap().total_days_elapsed())),
                     section_block(&format!("\n*{:.2}% of sprint scope completed.*\n", ticket_summary.completed_percentage)),
                     section_block("\nProgress will not be saved.\n"),
                 ],
@@ -239,7 +239,7 @@ impl SprintCommand {
 
                 Ok([vec![
                         header,
-                        section_block(&format!("\n*{}/{} tickets completed in {} days.*", ticket_summary.completed_tickets.len(), ticket_summary.sprint_ticket_count, active_sprint_context.as_ref().unwrap().total_days())),
+                        section_block(&format!("\n*{}/{} tickets completed in {} days.*", ticket_summary.completed_tickets.len(), ticket_summary.sprint_ticket_count, active_sprint_context.as_ref().unwrap().total_days_elapsed())),
                         section_block(&format!("\n*{:.2}% of sprint scope completed.*\n", ticket_summary.completed_percentage)),
                         header_block(completion_emoji),
                     ],
@@ -257,7 +257,7 @@ impl SprintCommand {
             SprintCommand::DailySummary => {
                 Ok([
                     vec![
-                        header_block(&format!("{} Daily Summary: {}", active_sprint_context.as_ref().unwrap().time_indicator(), print_current_date())),
+                        header_block(&format!("{} Daily Summary: {}", active_sprint_context.as_ref().unwrap().remaining_time_indicator(), print_current_date())),
                         section_block(&format!("*{} tickets open* out of {}.\n*{} days* remain in sprint.", 
                             ticket_summary.open_ticket_count, 
                             ticket_summary.sprint_ticket_count, 
@@ -295,29 +295,29 @@ mod sprint_event_message_generator_tests {
     }
 
     #[test]
-    fn test_total_days() {
+    fn test_total_days_elapsed() {
         let sprint_context = ActiveSprintContext {
             start_date: (chrono::Local::now().with_timezone(&Pacific) - chrono::Duration::try_days(5).unwrap()).format("%m/%d/%y").to_string(),
             ..Default::default()
         };
-        assert_eq!(sprint_context.total_days(), 5);
+        assert_eq!(sprint_context.total_days_elapsed(), 5);
     }
 
     #[test]
-    fn test_time_indicator() {
+    fn test_remaining_time_indicator() {
         let sprint_context = ActiveSprintContext {
             start_date: (chrono::Local::now().with_timezone(&Pacific) - chrono::Duration::try_days(10).unwrap()).format("%m/%d/%y").to_string(),
             end_date: (chrono::Local::now().with_timezone(&Pacific) + chrono::Duration::try_days(10).unwrap()).format("%m/%d/%y").to_string(),
             ..Default::default()
         };
-        assert_eq!(sprint_context.time_indicator(), "🌕");
+        assert_eq!(sprint_context.remaining_time_indicator(), "🌓");
 
         let sprint_context_advanced = ActiveSprintContext {
             start_date: (chrono::Local::now().with_timezone(&Pacific) - chrono::Duration::try_days(30).unwrap()).format("%m/%d/%y").to_string(),
             end_date: chrono::Local::now().with_timezone(&Pacific).format("%m/%d/%y").to_string(),
             ..Default::default()
         };
-        assert_eq!(sprint_context_advanced.time_indicator(), "🌑");
+        assert_eq!(sprint_context_advanced.remaining_time_indicator(), "🌑");
     }
 
     fn test_runtime() -> Runtime {

@@ -9,6 +9,7 @@ use crate::utils::s3::JsonStorageClient;
 use crate::utils::slack_components::section_block;
 
 use super::ticket::TicketLink;
+use super::ticket_label::TicketLabel;
 use super::ticket_state::TicketState;
 
 #[async_trait(?Send)]
@@ -78,7 +79,7 @@ pub struct DailyTicketContext {
     pub name: String, 
     pub url: String,
     pub state: TicketState,
-    pub is_goal: bool,
+    pub labels: Vec<TicketLabel>,
     pub added_on: String,
     pub added_in_sprint: String,
     pub last_moved_on: String,
@@ -267,7 +268,7 @@ pub mod mocks {
                 state: TicketState::Done,
                 name: "Recorded Ticket".to_string(),
                 url: "http://example.com/ticket2".to_string(),
-                is_goal: false,
+                labels: vec![],
                 dependency_of: None,
             }
         }

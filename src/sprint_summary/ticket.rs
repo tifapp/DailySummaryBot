@@ -54,7 +54,6 @@ pub struct TicketLink {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Ticket {
     pub sprint_age: usize,
-    pub is_new: bool,
     pub added_in_sprint: String,
     pub added_on: String,
     pub last_moved_on: String,
@@ -64,13 +63,19 @@ pub struct Ticket {
     pub pr: Option<PullRequest>,
 }
 
+const NEW_DAYS: i64 = 2;
+
 impl Ticket {
+    pub fn is_new(&self) -> bool {
+        days_between(Some(&self.added_on), &print_current_date()).unwrap() < NEW_DAYS
+    }
+
     pub fn is_goal(&self) -> bool {
         self.details.labels.iter().any(|label| *label == TicketLabel::Goal)
     }    
 
     fn ticket_name_new_emoji(&self) -> String {
-        if self.is_new {
+        if self.is_new() {
             return "🆕".to_string();
         }
 
@@ -320,7 +325,6 @@ impl From<&DailyTicketContext> for Ticket {
             moved_out_of_sprint: true,
             added_in_sprint: record.added_in_sprint.clone(),
             added_on: record.added_on.clone(),
-            is_new: false,
             last_moved_on: record.last_moved_on.clone(),
             details: TicketDetails {            
                 id: record.id.clone(),
@@ -386,7 +390,6 @@ pub mod mocks {
                 moved_out_of_sprint: false,
                 sprint_age: 1,
                 added_on: "04/20/24".to_string(),
-                is_new: false,
                 details: TicketDetails::default(),
                 members: vec![],
                 pr: Some(PullRequest::default()),
@@ -457,14 +460,14 @@ mod tests {
     #[test]
     fn test_ticket_name_new_emoji_new() {
         let mut ticket = Ticket::default();
-        ticket.is_new = true;
+        ticket.added_on = print_current_date();
         assert_eq!(ticket.ticket_name_new_emoji(), "🆕");
     }
 
     #[test]
     fn test_ticket_name_new_emoji_not_new() {
         let mut ticket = Ticket::default();
-        ticket.is_new = false;
+        ticket.added_on = "01/01/01".to_string();
         assert_eq!(ticket.ticket_name_new_emoji(), "");
     }
 
@@ -499,7 +502,7 @@ mod tests {
     #[test]
     fn test_annotated_ticket_name_with_emojis() {
         let mut ticket = Ticket::default();
-        ticket.is_new = true;
+        ticket.added_on = print_current_date();
         ticket.details.labels = vec![TicketLabel::Goal];
         ticket.sprint_age = 2;
         assert_eq!(ticket.annotated_ticket_name(), "🆕🐌🐌🏁 Mock Task");

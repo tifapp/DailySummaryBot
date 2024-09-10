@@ -85,7 +85,6 @@ where
                     moved_out_of_sprint: previous_version.is_some() && ticket_details.state <= TicketState::InScope,
                     sprint_age: context.sprint_age,
                     added_on: context.added_on,
-                    is_new: previous_version.is_none(),
                     added_in_sprint: context.added_in_sprint,
                     last_moved_on: context.last_moved_on,
                     members: ticket_details.member_ids.iter()
@@ -295,7 +294,6 @@ mod ticket_summary_tests {
         assert_eq!(summary_json["open_ticket_count"], 4, "Total number of tickets should be 4");
         assert_eq!(summary_json["open_tickets"], json!(vec![
             serde_json::to_value(&Ticket {
-                is_new: false,
                 details: TicketDetails {
                     name: "Mock Task No PR".to_string(),
                     pr_url: None,
@@ -312,7 +310,6 @@ mod ticket_summary_tests {
         ]), "Fetched open tickets should match");
         assert_eq!(summary_json["open_prs"], json!(vec![
             serde_json::to_value(&Ticket {
-                  is_new: true,
                   details: TicketDetails {
                       name: "Mock Task Default".to_string(),
                       pr_url: Some("https://default-url.com".to_string()),
@@ -326,7 +323,6 @@ mod ticket_summary_tests {
                   ..Ticket::default()
               }).unwrap(),
               serde_json::to_value(&Ticket {
-                  is_new: true,
                   details: TicketDetails {
                       name: "Mock Task Merged".to_string(),
                       pr_url: Some("https://merged-url.com".to_string()),
@@ -342,7 +338,6 @@ mod ticket_summary_tests {
         ]), "Fetched open pr tickets should match");
         assert_eq!(summary_json["blocked_prs"], json!(vec![
             serde_json::to_value(&Ticket {
-                is_new: true,
                 details: TicketDetails {
                     name: "Mock Task Unmergeable".to_string(),
                     pr_url: Some("https://unmergeable-url.com".to_string()),

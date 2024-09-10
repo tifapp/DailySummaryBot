@@ -215,7 +215,7 @@ impl SprintCommand {
                 ]].concat())
             },
             SprintCommand::SprintEnd | SprintCommand::SprintReview => {
-                let mut header = header_block(&format!("🎆 Sprint {} Review: {} - {}", active_sprint_context.as_ref().unwrap().name, print_current_date(), active_sprint_context.as_ref().unwrap().end_date));
+                let mut header = header_block(&format!("🎆 Sprint {} Review: {} - {}", active_sprint_context.as_ref().unwrap().name, active_sprint_context.as_ref().unwrap().start_date, active_sprint_context.as_ref().unwrap().end_date));
                 if self == &SprintCommand::SprintEnd {
                     header = header_block(&format!("💥 Sprint {} ended early.", active_sprint_context.as_ref().unwrap().name));
                 }
@@ -407,7 +407,7 @@ mod sprint_event_message_generator_tests {
     }
     
     #[test]
-    fn test_sprint_review_with_historical_data() {
+    fn test_sprint_review_clears_current_sprint_data() {
         let rt = test_runtime();
         env::set_var("TRELLO_BOARD_ID", "TestBoardID");
         let mut ticket_summary = TicketSummary::default();
@@ -415,17 +415,39 @@ mod sprint_event_message_generator_tests {
         let mut cumulative_sprint_contexts = CumulativeSprintContexts::default();
         let mock_sprint_client = MockSprintClient::new(Some(active_sprint_context.clone()), Some(cumulative_sprint_contexts.clone()), None);
         let mock_notification_client = MockEventBridgeClient::new();
-        let event = SprintCommand::SprintReview;
+        let action = SprintCommand::SprintReview;
 
         rt.block_on(async {
             mock_notification_client.create_daily_trigger_rule(&active_sprint_context.name).await.expect("Failed to create rule");
-            let _ = event.save_sprint_state( &mut ticket_summary,&Some(active_sprint_context),&mut cumulative_sprint_contexts, &mock_sprint_client,&mock_notification_client).await.unwrap();
+            let _ = action.save_sprint_state( &mut ticket_summary,&Some(active_sprint_context),&mut cumulative_sprint_contexts, &mock_sprint_client,&mock_notification_client).await.unwrap();
             assert!(mock_sprint_client.get_sprint_data().await.unwrap().is_none());
+        });
+    }
+    
+    #[test]
+    fn test_sprint_review_message() {
+        let rt = test_runtime();
+        env::set_var("TRELLO_BOARD_ID", "TestBoardID");
+        let ticket_summary = TicketSummary::default();
+        let cumulative_sprint_contexts = CumulativeSprintContexts::default();
+        let daily_ticket_contexts = DailyTicketContexts::default();
+        let action = SprintCommand::SprintReview;
+        
+        let mut active_sprint_context = ActiveSprintContext::default();
+        active_sprint_context.name = "21-Pascal".to_string();
+        active_sprint_context.end_date = "05/28/24".to_string();
+        active_sprint_context.end_date = "06/11/24".to_string();
+
+        rt.block_on(async {
+            let result = action.create_sprint_message(&ticket_summary, &Some(active_sprint_context), &cumulative_sprint_contexts, &daily_ticket_contexts).await.unwrap();
+            assert!(result.iter().any(|block| block.to_string().contains("Sprint 21-Pascal Review: 05/28/24 - 06/11/24")));
+            assert!(result.iter().any(|block| block.to_string().contains("completed in 14 days.")));
+            assert!(result.iter().any(|block| block.to_string().contains("of sprint scope completed.")));
         });
     }
 
     #[test]
-    fn test_daily_summary_output() {
+    fn test_daily_summary_message() {
         let rt = test_runtime();
         let ticket_summary = TicketSummary::default();
         let active_sprint_context = ActiveSprintContext {

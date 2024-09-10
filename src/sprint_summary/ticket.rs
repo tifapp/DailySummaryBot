@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 use crate::utils::date::{days_between, print_current_date};
 use crate::utils::slack_components::{link_element, text_element, user_element};
 use super::sprint_records::DailyTicketContext;
+use super::ticket_label::TicketLabel;
 use super::ticket_state::TicketState;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -37,7 +38,7 @@ pub struct TicketDetails {
     pub member_ids: Vec<String>,
     pub has_description: bool,
     pub has_labels: bool,
-    pub is_goal: bool,
+    pub labels: Vec<TicketLabel>,
     pub checklist_items: u32,
     pub checked_checklist_items: u32,
     pub pr_url: Option<String>,
@@ -64,6 +65,10 @@ pub struct Ticket {
 }
 
 impl Ticket {
+    pub fn is_goal(&self) -> bool {
+        self.details.labels.iter().any(|label| *label == TicketLabel::Goal)
+    }    
+
     fn ticket_name_new_emoji(&self) -> String {
         if self.is_new {
             return "🆕".to_string();
@@ -81,7 +86,7 @@ impl Ticket {
     }
     
     fn ticket_name_goal_emoji(&self) -> String {
-        if self.details.is_goal {
+        if self.is_goal() {
             return "🏁".to_string();
         }
 
@@ -297,7 +302,7 @@ impl From<&Ticket> for DailyTicketContext {
             name: ticket.details.name.clone(),
             url: ticket.details.url.clone(),
             state: ticket.details.state.clone(),
-            is_goal: ticket.details.is_goal,
+            labels: ticket.details.labels.clone(),
             added_on: ticket.added_on.clone(),
             added_in_sprint: ticket.added_in_sprint.clone(),
             last_moved_on: ticket.last_moved_on.clone(),
@@ -324,7 +329,7 @@ impl From<&DailyTicketContext> for Ticket {
                 url: record.url.clone(),                          
                 has_description: true,   
                 has_labels: true,                      
-                is_goal: false,  
+                labels: record.labels.clone(),  
                 checklist_items: 0,
                 checked_checklist_items: 0,  
                 member_ids: vec![],
@@ -368,7 +373,7 @@ pub mod mocks {
                 checked_checklist_items: 3,
                 member_ids: vec![],
                 id: "abc123".to_string(),
-                is_goal: false,
+                labels: vec![],
                 pr_url: Some("http://github.com/example".to_string()),
                 dependency_of: None,
             }
@@ -480,14 +485,14 @@ mod tests {
     #[test]
     fn test_ticket_name_goal_emoji_with_goal() {
         let mut ticket = Ticket::default();
-        ticket.details.is_goal = true;
+        ticket.details.labels = vec![TicketLabel::Goal];
         assert_eq!(ticket.ticket_name_goal_emoji(), "🏁");
     }
 
     #[test]
     fn test_ticket_name_goal_emoji_without_goal() {
         let mut ticket = Ticket::default();
-        ticket.details.is_goal = false;
+        ticket.details.labels = vec![];
         assert_eq!(ticket.ticket_name_goal_emoji(), "");
     }
 
@@ -495,7 +500,7 @@ mod tests {
     fn test_annotated_ticket_name_with_emojis() {
         let mut ticket = Ticket::default();
         ticket.is_new = true;
-        ticket.details.is_goal = true;
+        ticket.details.labels = vec![TicketLabel::Goal];
         ticket.sprint_age = 2;
         assert_eq!(ticket.annotated_ticket_name(), "🆕🐌🐌🏁 Mock Task");
     }
@@ -504,7 +509,7 @@ mod tests {
     fn test_annotated_ticket_name_without_emojis() {
         let mut ticket = Ticket::default();
         ticket.added_on = (chrono::Local::now() - chrono::Duration::try_days(5).unwrap()).format("%m/%d/%y").to_string();
-        ticket.details.is_goal = false;
+        ticket.details.labels = vec![];
         ticket.sprint_age = 0;
         assert_eq!(ticket.annotated_ticket_name(), "Mock Task");
     }

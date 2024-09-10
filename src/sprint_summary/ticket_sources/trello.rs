@@ -2,7 +2,7 @@ use std::{collections::HashMap, env};
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
 use anyhow::{Result, Error};
-use crate::{sprint_summary::{ticket::{TicketDetails, TicketLink}, ticket_state::TicketState}, tracing::info};
+use crate::{sprint_summary::{ticket::{TicketDetails, TicketLink}, ticket_label::TicketLabel, ticket_state::TicketState}, tracing::info};
 
 use super::TicketDetailsClient;
 
@@ -107,7 +107,7 @@ impl TicketDetailsClient for Client {
                     url: card.url,
                     has_labels: !card.labels.is_empty(),
                     has_description: card.desc.as_ref().map_or(false, |d| !d.is_empty()),
-                    is_goal: card.labels.iter().any(|label| label.name == "Goal"),
+                    labels: card.labels.iter().filter_map(|label| TicketLabel::from_str(&label.name)).collect(),
                     checklist_items: card.badges.checkItems,
                     checked_checklist_items: card.badges.checkItemsChecked,
                     pr_url: card.attachments.iter()

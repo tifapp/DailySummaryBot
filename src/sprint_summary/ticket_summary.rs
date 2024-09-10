@@ -11,7 +11,7 @@ trait PrioritizedPush {
 
 impl PrioritizedPush for VecDeque<Ticket> {
     fn prioritized_push(&mut self, ticket: Ticket) {
-        if ticket.details.is_goal {
+        if ticket.is_goal() {
             self.push_front(ticket);
         } else {
             self.push_back(ticket);
@@ -242,25 +242,25 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::sprint_summary::ticket::{PullRequest, TicketDetails};
+    use crate::sprint_summary::{ticket::{PullRequest, TicketDetails}, ticket_label::TicketLabel};
 
     #[test]
     fn test_prioritized_push() {
         let mut tickets = VecDeque::new();
         let goal_ticket = Ticket {
-            details: TicketDetails { is_goal: true, ..Default::default() },
+            details: TicketDetails { labels: vec![TicketLabel::Goal], ..Default::default() },
             ..Default::default()
         };
         let normal_ticket = Ticket {
-            details: TicketDetails { is_goal: false, ..Default::default() },
+            details: TicketDetails { labels: vec![], ..Default::default() },
             ..Default::default()
         };
 
         tickets.prioritized_push(normal_ticket.clone());
         tickets.prioritized_push(goal_ticket.clone());
 
-        assert_eq!(tickets.front().unwrap().details.is_goal, true);
-        assert_eq!(tickets.back().unwrap().details.is_goal, false);
+        assert_eq!(tickets.front().unwrap().is_goal(), true);
+        assert_eq!(tickets.back().unwrap().is_goal(), false);
     }
 
     #[test]
@@ -324,7 +324,7 @@ mod tests {
             ..Ticket::default()
         };
         let in_progress_goal_ticket = Ticket {
-            details: TicketDetails { name: "In Progress Goal Ticket".to_string(), is_goal: true, state: TicketState::InProgress, ..TicketDetails::default() },
+            details: TicketDetails { name: "In Progress Goal Ticket".to_string(), labels: vec![TicketLabel::Goal], state: TicketState::InProgress, ..TicketDetails::default() },
             pr: None,
             ..Ticket::default()
         };

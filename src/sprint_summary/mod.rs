@@ -4,6 +4,7 @@ pub mod ticket_sources;
 pub mod sprint_records;
 pub mod events;
 pub mod ticket_state;
+pub mod ticket_label;
 use std::env;
 use std::ops::Deref;
 use anyhow::{Result, anyhow};

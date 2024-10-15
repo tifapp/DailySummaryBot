@@ -80,6 +80,9 @@ pub fn count_difference(num1: i32, num2: i32) -> String {
     }
 }
 
+const DAILY_SUMMARY_TIME: &str = "cron(0 3 * * ? *)";
+const SPRINT_REVIEW_TIME: &str = "cron(0 4 * * ? *)";
+
 impl SprintCommand {
     pub async fn save_sprint_state(
         &self, 
@@ -101,11 +104,15 @@ impl SprintCommand {
                     trello_board: env::var("TRELLO_BOARD_ID")?,
                 };
                 sprint_client.put_sprint_data(&new_sprint_context).await?;
-                notification_client.create_daily_trigger_rule(sprint_name).await?;
+                notification_client.create_daily_trigger_rule(sprint_name, DAILY_SUMMARY_TIME).await?;
                 sprint_client.put_ticket_data(&(ticket_summary).deref().into()).await?;
             },
             SprintCommand::DailySummary => {
                 sprint_client.put_ticket_data(&(ticket_summary).deref().into()).await?;
+                let context = active_sprint_context.as_ref().unwrap();
+                if (days_between(Some(&print_current_date()), &context.end_date).unwrap() == 1) {
+                    notification_client.change_daily_trigger_rule(&context.name, SPRINT_REVIEW_TIME).await?;
+                }
             },
             SprintCommand::SprintCancel | SprintCommand::SprintEnd | SprintCommand::SprintReview => {
                 if let Some(sprint_data) = active_sprint_context {
@@ -386,7 +393,7 @@ mod sprint_event_message_generator_tests {
         let event = SprintCommand::SprintCancel;
 
         rt.block_on(async {
-            let _ = mock_notification_client.create_daily_trigger_rule("Sprint 1").await;
+            let _ = mock_notification_client.create_daily_trigger_rule("Sprint 1", DAILY_SUMMARY_TIME).await;
             let _ = event.save_sprint_state(&mut ticket_summary, &active_sprint_context.clone(), &mut cumulative_sprint_contexts, &mock_sprint_client, &mock_notification_client).await.unwrap();
             assert_eq!(mock_sprint_client.get_sprint_data().await.unwrap(), None);
         });
@@ -407,6 +414,26 @@ mod sprint_event_message_generator_tests {
     }
     
     #[test]
+    fn test_daily_summary_updates_trigger_rule_before_deadline() {
+        let rt = test_runtime();
+        let mut ticket_summary = TicketSummary::default();
+        let active_sprint_context = ActiveSprintContext {
+            end_date: (chrono::Local::now().with_timezone(&Pacific) + chrono::Duration::try_days(1).unwrap()).format("%m/%d/%y").to_string(),
+            ..ActiveSprintContext::default()
+        };
+        let mock_sprint_client = MockSprintClient::new(None, None, None);
+        let mock_notification_client = MockEventBridgeClient::new();
+        let action = SprintCommand::DailySummary;
+
+        rt.block_on(async {
+            let name = &active_sprint_context.name.clone();
+            let _ = mock_notification_client.create_daily_trigger_rule(name, DAILY_SUMMARY_TIME).await;
+            let _ = action.save_sprint_state(&mut ticket_summary, &Some(active_sprint_context), &mut CumulativeSprintContexts::default(), &mock_sprint_client, &mock_notification_client).await.unwrap();
+            assert!(mock_notification_client.rules_created.lock().await.get(name) == Some(&SPRINT_REVIEW_TIME.to_string()));
+        });
+    }
+    
+    #[test]
     fn test_sprint_review_clears_current_sprint_data() {
         let rt = test_runtime();
         env::set_var("TRELLO_BOARD_ID", "TestBoardID");
@@ -418,9 +445,11 @@ mod sprint_event_message_generator_tests {
         let action = SprintCommand::SprintReview;
 
         rt.block_on(async {
-            mock_notification_client.create_daily_trigger_rule(&active_sprint_context.name).await.expect("Failed to create rule");
+            let name = &active_sprint_context.name.clone();
+            let _ = mock_notification_client.create_daily_trigger_rule(name, DAILY_SUMMARY_TIME).await;
             let _ = action.save_sprint_state( &mut ticket_summary,&Some(active_sprint_context),&mut cumulative_sprint_contexts, &mock_sprint_client,&mock_notification_client).await.unwrap();
-            assert!(mock_sprint_client.get_sprint_data().await.unwrap().is_none());
+            assert!(mock_sprint_client.get_sprint_data().await.unwrap().is_none());        
+            assert!(mock_notification_client.rules_deleted.lock().await.contains(name));
         });
     }
     
@@ -462,7 +491,7 @@ mod sprint_event_message_generator_tests {
             let result = event.create_sprint_message(&ticket_summary, &Some(active_sprint_context), &cumulative_sprint_contexts, &daily_ticket_contexts).await.unwrap();
             assert!(result.iter().any(|block| block.to_string().contains("Daily Summary")));
             assert!(result.iter().any(|block| block.to_string().contains("tickets open* out of")));
-            assert!(result.iter().any(|block| block.to_string().contains("days* remain in sprint.")));
+            assert!(result.iter().any(|block| block.to_string().contains("5 days* remain in sprint.")));
         });
     }
 }

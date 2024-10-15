@@ -12,15 +12,14 @@ pub async fn create_eventbridge_client() -> Client {
 
 #[async_trait(?Send)]
 pub trait NotificationClient {
-    async fn create_daily_trigger_rule(&self, rule_name: &str) -> Result<()>;
+    async fn create_daily_trigger_rule(&self, rule_name: &str, cron_expression: &str) -> Result<()>;
+    async fn change_daily_trigger_rule(&self, rule_name: &str, cron_expression: &str) -> Result<()>;
     async fn delete_daily_trigger_rule(&self, rule_name: &str) -> Result<()>;
 }
 
 #[async_trait(?Send)]
 impl NotificationClient for Client {
-    async fn create_daily_trigger_rule(&self, rule_name: &str) -> Result<()> {
-        let cron_expression = "cron(0 3 * * ? *)";
-
+    async fn create_daily_trigger_rule(&self, rule_name: &str, cron_expression: &str) -> Result<()> {
         self.put_rule()
             .name(rule_name)
             .schedule_expression(cron_expression)
@@ -39,6 +38,22 @@ impl NotificationClient for Client {
             .rule(rule_name)
             .targets(target)
             .send().await.map_err(|e| anyhow!("Failed to set target for rule: {}", e))?;
+
+        Ok(())
+    }
+    
+    async fn change_daily_trigger_rule(&self, rule_name: &str, cron_expression: &str) -> Result<()> {
+        let rule_description = self.describe_rule().name(rule_name).send().await
+            .map_err(|e| anyhow!("Failed to find rule: {}", e))?;
+
+        self.put_rule()
+            .name(rule_name)
+            .schedule_expression(cron_expression)
+            .state(rule_description.state().unwrap_or(&RuleState::Enabled).clone())
+            .description(rule_description.description().unwrap_or("Updating cron expression"))
+            .send()
+            .await
+            .map_err(|e| anyhow!("Failed to update rule: {}", e))?;
 
         Ok(())
     }
@@ -83,11 +98,22 @@ pub mod eventbridge_mocks {
 
     #[async_trait(?Send)]
     impl NotificationClient for MockEventBridgeClient {
-        async fn create_daily_trigger_rule(&self, rule_name: &str) -> Result<()> {
+        async fn create_daily_trigger_rule(&self, rule_name: &str, cron_expression: &str) -> Result<()> {
             let cron_expression = "cron(0 19 * * ? *)";
             let mut rules_created = self.rules_created.lock().await;
             rules_created.insert(rule_name.to_string(), cron_expression.to_string());
             Ok(())
+        }
+        
+        async fn change_daily_trigger_rule(&self, rule_name: &str, cron_expression: &str) -> Result<()> {
+            let mut rules_created = self.rules_created.lock().await;
+            
+            if let Some(existing_rule) = rules_created.get_mut(rule_name) {
+                *existing_rule = cron_expression.to_string();
+                Ok(())
+            } else {
+                Err(anyhow!("Rule not found: {}", rule_name))
+            }
         }
 
         async fn delete_daily_trigger_rule(&self, rule_name: &str) -> Result<()> {

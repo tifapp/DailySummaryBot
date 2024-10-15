@@ -20,57 +20,79 @@ async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     use sprint_summary::{events::SprintEvents, SprintCommand};
     use utils::eventbridge::create_eventbridge_client;
 
-
     info!("Input is: {:?}", event);
 
-    let sprint_client = create_json_storage_client().await;
+    // Try to execute the function logic and catch any error
+    let result: Result<Value, Error> = (|| async {
+        let sprint_client = create_json_storage_client().await;
 
-    let active_sprint_context = sprint_client.get_sprint_data().await?;
-    let previous_ticket_data = sprint_client.get_ticket_data().await?.unwrap_or(DailyTicketContexts {
-        tickets: VecDeque::new(),
-    });
-    let user_mapping = sprint_client.get_sprint_members().await?.unwrap_or(HashMap::new());
-    let mut cumulative_sprint_contexts = sprint_client.get_historical_data().await?.unwrap_or(CumulativeSprintContexts {
-        history: Vec::new(),
-    });
+        let active_sprint_context = sprint_client.get_sprint_data().await?;
+        let previous_ticket_data = sprint_client.get_ticket_data().await?.unwrap_or(DailyTicketContexts {
+            tickets: VecDeque::new(),
+        });
+        let user_mapping = sprint_client.get_sprint_members().await?.unwrap_or(HashMap::new());
+        let mut cumulative_sprint_contexts = sprint_client.get_historical_data().await?.unwrap_or(CumulativeSprintContexts {
+            history: Vec::new(),
+        });
 
-    let sprint_events = event.try_into_sprint_events().expect("Failed to parse sprint events");
-    
-    let (channel_id, response_url) = match &sprint_events {
-        SprintEvents::MessageTrigger { channel_id, response_url, .. } => (channel_id.clone(), response_url.clone()),
-        _ => (active_sprint_context.as_ref().unwrap().channel_id.clone(), None)
-    };
+        let sprint_events = event.try_into_sprint_events().expect("Failed to parse sprint events");
 
-    let sprint_command_result = sprint_events.try_into_sprint_command(&active_sprint_context, &cumulative_sprint_contexts).await;
+        let (channel_id, response_url) = match &sprint_events {
+            SprintEvents::MessageTrigger { channel_id, response_url, .. } => (channel_id.clone(), response_url.clone()),
+            _ => (active_sprint_context.as_ref().unwrap().channel_id.clone(), None)
+        };
 
-    match sprint_command_result {
-        Ok(sprint_command) => {
-            info!("Sprint event is valid: {:?}", sprint_command);
-            
-            let fetch_client = Client::new();
-            let name = match &sprint_command {
-                SprintCommand::SprintPreview { sprint_name, .. } | SprintCommand::SprintKickoff { sprint_name, .. } => sprint_name,
-                _ => &active_sprint_context.as_ref().unwrap().name,
-            };
+        let sprint_command_result = sprint_events.try_into_sprint_command(&active_sprint_context, &cumulative_sprint_contexts).await;
 
-            let mut ticket_summary = fetch_client.fetch_ticket_summary(name, &cumulative_sprint_contexts, &previous_ticket_data, user_mapping).await?;
-            let notification_client = create_eventbridge_client().await;
+        match sprint_command_result {
+            Ok(sprint_command) => {
+                info!("Sprint event is valid: {:?}", sprint_command);
 
-            let sprint_message = sprint_command.create_sprint_message(&ticket_summary, &active_sprint_context, &cumulative_sprint_contexts, &previous_ticket_data).await.expect("should generate sprint message");
-            sprint_command.save_sprint_state(&mut ticket_summary, &active_sprint_context, &mut cumulative_sprint_contexts, &sprint_client, &notification_client).await.expect("should update sprint state");
+                let fetch_client = Client::new();
+                let name = match &sprint_command {
+                    SprintCommand::SprintPreview { sprint_name, .. } | SprintCommand::SprintKickoff { sprint_name, .. } => sprint_name,
+                    _ => &active_sprint_context.as_ref().unwrap().name,
+                };
 
-            match fetch_client.send_teams_message(&channel_id, &sprint_message, response_url).await {
-                Ok(()) => Ok(json!("Processed command successfully")),
-                Err(e) => Ok(json!(format!("Error processing command: {:?}", e))),
+                let mut ticket_summary = fetch_client.fetch_ticket_summary(name, &cumulative_sprint_contexts, &previous_ticket_data, user_mapping).await?;
+                let notification_client = create_eventbridge_client().await;
+
+                let sprint_message = sprint_command.create_sprint_message(&ticket_summary, &active_sprint_context, &cumulative_sprint_contexts, &previous_ticket_data).await.expect("should generate sprint message");
+                sprint_command.save_sprint_state(&mut ticket_summary, &active_sprint_context, &mut cumulative_sprint_contexts, &sprint_client, &notification_client).await.expect("should update sprint state");
+
+                fetch_client.send_teams_message(&channel_id, &sprint_message, response_url).await?;
+                Ok(json!("Processed command successfully"))
+            },
+            Err(e) => {
+                error!("Error converting lambda event to sprint event: {:?}", e);
+                Ok(json!(format!("Error: Failed to convert event to sprint event: {:?}", e)))
             }
-        },
+        }
+    })().await;
+
+    // If an error occurred, handle it by sending the error details to Teams
+    match result {
+        Ok(success_value) => Ok(success_value),
         Err(e) => {
-            error!("Error converting lambda event to sprint event: {:?}", e);
-            Ok(json!({
-                "statusCode": 400,
-                "headers": { "Content-Type": "text/html" },
-                "body": format!("Error: Failed to convert event to sprint event: {}", e)
-            }))
+            // Log the error
+            error!("An error occurred: {:?}", e);
+
+            // Attempt to send the error message to Teams
+            let fetch_client = Client::new();
+            let error_message = format!("Lambda function encountered an error: {:?}", e);
+
+            if let Some(response_url) = event.payload["response_url"].as_str() {
+                if let Err(send_error) = fetch_client.send_teams_message(
+                    "C06RRR7NBAB",
+                    &error_message,
+                    Some(response_url.to_string())
+                ).await {
+                    error!("Failed to send error message to Teams: {:?}", send_error);
+                }
+            }
+
+            // Return the error response
+            Ok(json!(format!("Error processing command: {:?}", e)))
         }
     }
 }

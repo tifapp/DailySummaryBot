@@ -24,7 +24,7 @@ impl<T> SprintMemberClient for T where T: JsonStorageClient, {
         self.get_json("trello_to_slack_users.json").await?
             .map(|json_value| {
                 from_value::<HashMap<String, String>>(json_value)
-                    .context("Failed to deserialize sprint data")
+                    .context("Failed to deserialize trello data")
             })
             .transpose()
     }
@@ -56,7 +56,7 @@ impl<T> ActiveSprintContextClient for T where T: JsonStorageClient, {
         self.get_json("sprint_data.json").await?
             .map(|json_value| {
                 from_value::<ActiveSprintContext>(json_value)
-                    .context("Failed to deserialize sprint data")
+                    .context("Failed to deserialize sprint context data")
             })
             .transpose()
     }
@@ -79,7 +79,7 @@ pub struct DailyTicketContext {
     pub name: String, 
     pub url: String,
     pub state: TicketState,
-    pub labels: Vec<TicketLabel>,
+    pub labels: Option<Vec<TicketLabel>>,
     pub added_on: String,
     pub added_in_sprint: String,
     pub last_moved_on: String,
@@ -113,7 +113,7 @@ impl<T> DailyTicketContextClient for T where T: JsonStorageClient, {
         self.get_json("ticket_data.json").await?
             .map(|json_value| {
                 from_value::<DailyTicketContexts>(json_value)
-                    .context("Failed to deserialize sprint data")
+                    .context("Failed to deserialize ticket data")
             })
             .transpose()
     }
@@ -191,7 +191,7 @@ impl<T> CumulativeSprintContextClient for T where T: JsonStorageClient, {
         self.get_json("historical_data.json").await?
             .map(|json_value| {
                 from_value::<CumulativeSprintContexts>(json_value)
-                    .context("Failed to deserialize sprint data")
+                    .context("Failed to deserialize historical data")
             })
             .transpose()
     }
@@ -268,7 +268,7 @@ pub mod mocks {
                 state: TicketState::Done,
                 name: "Recorded Ticket".to_string(),
                 url: "http://example.com/ticket2".to_string(),
-                labels: vec![],
+                labels: Some(vec![]),
                 dependency_of: None,
             }
         }
